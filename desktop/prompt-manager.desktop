@@ -1,0 +1,18 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Prompt Manager
+GenericName=Prompt Organizer & Editor
+Comment=Manage, organize, template, and deploy AI prompts
+Exec=prompt-manager %F
+Icon=prompt-manager
+Terminal=false
+Categories=Utility;TextEditor;
+Keywords=prompt;ai;llm;claude;chatgpt;gemini;editor;templates;
+StartupWMClass=prompt-manager
+MimeType=application/json;text/plain;text/markdown;
+Actions=NewPrompt;
+
+[Desktop Action NewPrompt]
+Name=New Prompt
+Exec=prompt-manager --new
