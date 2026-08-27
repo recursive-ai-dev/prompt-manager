@@ -51,13 +51,14 @@ class PromptCardWidget(QWidget):
         self.star_btn.setStyleSheet(
             f"border: none; background: transparent; color: {star_color}; font-size: 14px; padding: 0;"
         )
+        self.star_btn.setToolTip("Click to toggle favorite (Pin to top)")
         self.star_btn.clicked.connect(lambda: self.favorite_clicked.emit(self.prompt.id))
         top_row.addWidget(self.star_btn)
 
         layout.addLayout(top_row)
 
         # Middle row: Description or content preview
-        desc_text = prompt.description or prompt.template_content.splitlines()[0] if prompt.template_content else ""
+        desc_text = prompt.description or (prompt.template_content.splitlines()[0] if prompt.template_content else "")
         if desc_text:
             snippet_label = QLabel(desc_text[:65] + ("..." if len(desc_text) > 65 else ""))
             snippet_label.setStyleSheet("color: #94a3b8; font-size: 11px;")
@@ -79,16 +80,24 @@ class PromptCardWidget(QWidget):
             font-weight: 600;
             """
         )
+        badge.setToolTip(f"Target AI model: {prompt.target_model}")
         bottom_row.addWidget(badge)
 
         if prompt.tags:
             first_tags = " ".join([f"#{t}" for t in prompt.tags[:2]])
             tags_label = QLabel(first_tags)
             tags_label.setStyleSheet("color: #64748b; font-size: 10px;")
+            tags_label.setToolTip(f"Tags: {', '.join(prompt.tags)}")
             bottom_row.addWidget(tags_label)
 
         bottom_row.addStretch()
         layout.addLayout(bottom_row)
+
+        tags_info = f"\nTags: {', '.join(prompt.tags)}" if prompt.tags else ""
+        desc_info = f"\n{prompt.description}" if prompt.description else ""
+        self.setToolTip(
+            f"<b>{prompt.title}</b>{desc_info}\nModel: {prompt.target_model}{tags_info}\nUpdated: {prompt.updated_at[:16]}"
+        )
 
 
 class PromptListPanel(QFrame):
@@ -115,12 +124,14 @@ class PromptListPanel(QFrame):
         self.new_btn = QPushButton("+ New Prompt")
         self.new_btn.setObjectName("primaryButton")
         self.new_btn.setFixedHeight(34)
+        self.new_btn.setToolTip("Create a new prompt template in active category (Ctrl+N)")
         self.new_btn.clicked.connect(self.new_prompt_requested.emit)
         layout.addWidget(self.new_btn)
 
         # Search Bar
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search prompts... (Ctrl+K)")
+        self.search_input.setToolTip("Full-text search across titles, templates, descriptions, and system instructions (Ctrl+K or Ctrl+F)")
         self.search_input.setClearButtonEnabled(True)
         self.search_input.setFixedHeight(32)
         layout.addWidget(self.search_input)
@@ -135,6 +146,7 @@ class PromptListPanel(QFrame):
         # List Widget
         self.list_widget = QListWidget()
         self.list_widget.setSpacing(4)
+        self.list_widget.setToolTip("Prompt list. Click to edit, right-click for quick actions.")
         self.list_widget.itemSelectionChanged.connect(self._on_selection_changed)
         self.list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list_widget.customContextMenuRequested.connect(self._show_context_menu)
@@ -196,10 +208,10 @@ class PromptListPanel(QFrame):
         prompt_id = item.data(Qt.ItemDataRole.UserRole)
 
         menu = QMenu(self)
-        dup_action = menu.addAction("Duplicate Prompt")
-        fav_action = menu.addAction("Toggle Favorite")
+        dup_action = menu.addAction("📋 Duplicate Prompt (Ctrl+D)")
+        fav_action = menu.addAction("⭐ Toggle Favorite")
         menu.addSeparator()
-        del_action = menu.addAction("Delete Prompt")
+        del_action = menu.addAction("🗑️ Delete Prompt (Del)")
 
         action = menu.exec(self.list_widget.mapToGlobal(pos))
         if action == dup_action:

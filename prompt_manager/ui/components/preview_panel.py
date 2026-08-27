@@ -36,20 +36,23 @@ class PreviewPanel(QFrame):
         preview_label.setStyleSheet(
             "font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 0.5px;"
         )
+        preview_label.setToolTip("Live preview of the fully compiled and hydrated prompt")
         header_layout.addWidget(preview_label)
         header_layout.addStretch()
 
         self.copy_btn = QPushButton("📋 Copy Prompt")
         self.copy_btn.setObjectName("primaryButton")
+        self.copy_btn.setToolTip("Copy hydrated prompt text to clipboard (Ctrl+Shift+C)")
         self.copy_btn.clicked.connect(self.copy_prompt_requested.emit)
         header_layout.addWidget(self.copy_btn)
 
         self.copy_json_btn = QPushButton("JSON API")
-        self.copy_json_btn.setToolTip("Copy as OpenAI/Anthropic JSON payload")
+        self.copy_json_btn.setToolTip("Copy prompt formatted as an OpenAI / Anthropic chat completion JSON payload")
         self.copy_json_btn.clicked.connect(self.copy_json_requested.emit)
         header_layout.addWidget(self.copy_json_btn)
 
         self.export_menu_btn = QPushButton("Export ▾")
+        self.export_menu_btn.setToolTip("Export this prompt as Markdown, OpenAI JSON, Anthropic JSON, or Plain Text")
         self.export_menu = QMenu(self)
         self.export_menu.addAction("Markdown (.md)", lambda: self.export_requested.emit("markdown"))
         self.export_menu.addAction("OpenAI Payload (.json)", lambda: self.export_requested.emit("openai"))
@@ -63,6 +66,7 @@ class PreviewPanel(QFrame):
         # Preview Text Viewer
         self.preview_edit = QPlainTextEdit()
         self.preview_edit.setReadOnly(True)
+        self.preview_edit.setToolTip("Compiled output viewer (read-only live preview)")
         mono_font = QFont("monospace", 10)
         self.preview_edit.setFont(mono_font)
         self.preview_edit.setStyleSheet(
@@ -83,6 +87,7 @@ class PreviewPanel(QFrame):
         self.metrics_label.setStyleSheet(
             "font-size: 11px; color: #64748b; padding-top: 4px;"
         )
+        self.metrics_label.setToolTip("Real-time metrics: Estimated BPE tokens, word count, and character count")
         layout.addWidget(self.metrics_label)
 
     def set_content(self, text: str):

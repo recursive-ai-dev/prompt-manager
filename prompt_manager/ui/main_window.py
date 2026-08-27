@@ -8,6 +8,7 @@ import uuid
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QGuiApplication, QIcon, QKeySequence
 from PyQt6.QtWidgets import (
+    QDialog,
     QFileDialog,
     QMainWindow,
     QMessageBox,
@@ -17,7 +18,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from prompt_manager.config import APP_DISPLAY_NAME, DATABASE_PATH
+from prompt_manager.config import APP_DISPLAY_NAME, APP_VERSION, DATABASE_PATH, APP_DATA_DIR
 from prompt_manager.core.exporter import (
     format_json_string,
     to_anthropic_payload,
@@ -81,7 +82,9 @@ class MainWindow(QMainWindow):
         self.sidebar = SidebarPanel(self)
         self.sidebar.filter_changed.connect(self._on_filter_changed)
         self.sidebar.create_folder_requested.connect(self._on_create_folder)
+        self.sidebar.rename_folder_requested.connect(self._on_rename_folder)
         self.sidebar.delete_folder_requested.connect(self._on_delete_folder)
+        self.sidebar.delete_tag_requested.connect(self._on_delete_tag)
         self.main_splitter.addWidget(self.sidebar)
 
         # 2. Prompt List
@@ -149,21 +152,25 @@ class MainWindow(QMainWindow):
 
         new_act = QAction("&New Prompt", self)
         new_act.setShortcut(QKeySequence.StandardKey.New)
+        new_act.setStatusTip("Create a new prompt template (Ctrl+N)")
         new_act.triggered.connect(self._on_new_prompt)
         file_menu.addAction(new_act)
 
-        save_act = QAction("&Save", self)
+        save_act = QAction("&Save Revision", self)
         save_act.setShortcut(QKeySequence.StandardKey.Save)
+        save_act.setStatusTip("Save prompt modifications and record an immutable revision snapshot (Ctrl+S)")
         save_act.triggered.connect(lambda: self._on_save_prompt(create_revision=True))
         file_menu.addAction(save_act)
 
         file_menu.addSeparator()
 
         export_lib_act = QAction("Export Library to JSON...", self)
+        export_lib_act.setStatusTip("Export all prompts, folders, and tags to a portable JSON file")
         export_lib_act.triggered.connect(self._export_library)
         file_menu.addAction(export_lib_act)
 
         import_lib_act = QAction("Import Library from JSON...", self)
+        import_lib_act.setStatusTip("Import and merge prompts from a JSON backup file")
         import_lib_act.triggered.connect(self._import_library)
         file_menu.addAction(import_lib_act)
 
@@ -171,6 +178,7 @@ class MainWindow(QMainWindow):
 
         exit_act = QAction("E&xit", self)
         exit_act.setShortcut(QKeySequence("Ctrl+Q"))
+        exit_act.setStatusTip("Exit Prompt Manager (Ctrl+Q)")
         exit_act.triggered.connect(self.close)
         file_menu.addAction(exit_act)
 
@@ -179,18 +187,34 @@ class MainWindow(QMainWindow):
 
         search_act = QAction("Search Prompts...", self)
         search_act.setShortcut(QKeySequence("Ctrl+K"))
+        search_act.setStatusTip("Focus the prompt search box (Ctrl+K or Ctrl+F)")
         search_act.triggered.connect(self.prompt_list.focus_search)
         edit_menu.addAction(search_act)
 
         copy_prompt_act = QAction("Copy Hydrated Prompt", self)
         copy_prompt_act.setShortcut(QKeySequence("Ctrl+Shift+C"))
+        copy_prompt_act.setStatusTip("Copy the compiled prompt text with all variables filled (Ctrl+Shift+C)")
         copy_prompt_act.triggered.connect(self._on_copy_prompt)
         edit_menu.addAction(copy_prompt_act)
 
         dup_act = QAction("Duplicate Current Prompt", self)
         dup_act.setShortcut(QKeySequence("Ctrl+D"))
+        dup_act.setStatusTip("Clone active prompt as a new copy (Ctrl+D)")
         dup_act.triggered.connect(lambda: self._on_duplicate_prompt(self._active_prompt.id if self._active_prompt else None))
         edit_menu.addAction(dup_act)
+
+        # Help Menu
+        help_menu = menubar.addMenu("&Help")
+
+        shortcuts_act = QAction("Keyboard &Shortcuts", self)
+        shortcuts_act.setStatusTip("Show list of keyboard shortcuts")
+        shortcuts_act.triggered.connect(self._show_shortcuts_dialog)
+        help_menu.addAction(shortcuts_act)
+
+        about_act = QAction("&About Prompt Manager", self)
+        about_act.setStatusTip("View application version and system storage details")
+        about_act.triggered.connect(self._show_about_dialog)
+        help_menu.addAction(about_act)
 
     def _setup_shortcuts(self):
         # Additional search shortcut Ctrl+F
@@ -226,7 +250,7 @@ class MainWindow(QMainWindow):
         self._update_status_bar(len(prompts))
 
     def _update_status_bar(self, count: int = 0):
-        self.status_bar.showMessage(f"Prompts: {count}  |  Storage: {DATABASE_PATH}")
+        self.status_bar.showMessage(f"Prompts: {count}  |  Database: {DATABASE_PATH}")
 
     # ------------------ Slot Handlers ------------------
 
@@ -418,11 +442,27 @@ class MainWindow(QMainWindow):
         self._refresh_folders_and_tags()
         self.toast.show_message(f"Created folder '{folder_name}'")
 
+    def _on_rename_folder(self, folder_id: str, new_name: str):
+        folders = self.repo.list_folders()
+        target = next((f for f in folders if f.id == folder_id), None)
+        if target:
+            target.name = new_name
+            self.repo.save_folder(target)
+            self._refresh_folders_and_tags()
+            self._refresh_prompts_list()
+            self.toast.show_message(f"Renamed folder to '{new_name}'")
+
     def _on_delete_folder(self, folder_id: str):
         self.repo.delete_folder(folder_id)
         self._refresh_folders_and_tags()
         self._refresh_prompts_list()
         self.toast.show_message("Folder deleted")
+
+    def _on_delete_tag(self, tag_id: str):
+        self.repo.delete_tag(tag_id)
+        self._refresh_folders_and_tags()
+        self._refresh_prompts_list()
+        self.toast.show_message("Tag deleted")
 
     def _export_library(self):
         filename, _ = QFileDialog.getSaveFileName(
@@ -449,7 +489,6 @@ class MainWindow(QMainWindow):
         try:
             content = filepath.read_text(encoding="utf-8")
             if filepath.suffix.lower() == ".json":
-                # Try parsing as full library JSON or single prompt
                 try:
                     data = json.loads(content)
                     if "prompts" in data:
@@ -461,7 +500,6 @@ class MainWindow(QMainWindow):
                 except Exception:
                     pass
 
-            # Create as new prompt from text/markdown file
             title = filepath.stem.replace("-", " ").replace("_", " ").title()
             prompt = Prompt(
                 id=str(uuid.uuid4()),
@@ -474,3 +512,26 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.toast.show_message(f"Failed to open file: {e}")
 
+    def _show_shortcuts_dialog(self):
+        msg = (
+            "<h3>Keyboard Shortcuts</h3>"
+            "<table border='0' cellpadding='4' cellspacing='2'>"
+            "<tr><td><b>Ctrl + N</b></td><td>Create a new prompt</td></tr>"
+            "<tr><td><b>Ctrl + S</b></td><td>Save prompt revision snapshot</td></tr>"
+            "<tr><td><b>Ctrl + K</b> or <b>Ctrl + F</b></td><td>Focus search bar</td></tr>"
+            "<tr><td><b>Ctrl + Shift + C</b></td><td>Copy compiled prompt to clipboard</td></tr>"
+            "<tr><td><b>Ctrl + D</b></td><td>Duplicate current prompt</td></tr>"
+            "<tr><td><b>Ctrl + Q</b></td><td>Exit Prompt Manager</td></tr>"
+            "</table>"
+        )
+        QMessageBox.information(self, "Keyboard Shortcuts", msg)
+
+    def _show_about_dialog(self):
+        msg = (
+            f"<h3>{APP_DISPLAY_NAME} v{APP_VERSION}</h3>"
+            "<p>A native Linux desktop application to store, organize, template, and deploy AI prompts.</p>"
+            f"<p><b>Database:</b><br><code>{DATABASE_PATH}</code></p>"
+            f"<p><b>Data Directory:</b><br><code>{APP_DATA_DIR}</code></p>"
+            "<p>Built with Python 3 and PyQt6 for KDE Plasma / Wayland / X11.</p>"
+        )
+        QMessageBox.information(self, f"About {APP_DISPLAY_NAME}", msg)

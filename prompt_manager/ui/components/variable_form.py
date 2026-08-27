@@ -40,10 +40,20 @@ class VariableFormWidget(QFrame):
         header_label.setStyleSheet(
             "font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 0.5px;"
         )
+        header_label.setToolTip("Dynamic parameters detected in the active prompt template")
         header_layout.addWidget(header_label)
+
+        header_layout.addStretch()
+
+        self.clear_btn = QPushButton("Clear")
+        self.clear_btn.setStyleSheet("font-size: 11px; padding: 2px 8px;")
+        self.clear_btn.setToolTip("Clear all variable inputs to blank")
+        self.clear_btn.clicked.connect(self.clear_all)
+        header_layout.addWidget(self.clear_btn)
 
         self.reset_btn = QPushButton("Reset Defaults")
         self.reset_btn.setStyleSheet("font-size: 11px; padding: 2px 8px;")
+        self.reset_btn.setToolTip("Reset all variable inputs to their template default values")
         self.reset_btn.clicked.connect(self.reset_to_defaults)
         header_layout.addWidget(self.reset_btn)
         main_layout.addLayout(header_layout)
@@ -52,6 +62,7 @@ class VariableFormWidget(QFrame):
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll_area.setToolTip("Fill in variable values to live-compile the prompt")
 
         self.form_container = QWidget()
         self.form_layout = QVBoxLayout(self.form_container)
@@ -68,7 +79,6 @@ class VariableFormWidget(QFrame):
 
     def set_variables(self, specs: List[VariableSpec]):
         """Update form fields based on variable specifications, preserving existing typed values."""
-        # Check if specs actually changed
         current_names = [s.name for s in self._current_specs]
         new_names = [s.name for s in specs]
 
@@ -77,6 +87,7 @@ class VariableFormWidget(QFrame):
         if not specs:
             self.no_vars_label.show()
             self.scroll_area.hide()
+            self.clear_btn.hide()
             self.reset_btn.hide()
             self._current_values = {}
             self.values_changed.emit({})
@@ -84,9 +95,9 @@ class VariableFormWidget(QFrame):
 
         self.no_vars_label.hide()
         self.scroll_area.show()
+        self.clear_btn.show()
         self.reset_btn.show()
 
-        # If variable names are unchanged, we don't need to reconstruct the entire UI
         if current_names == new_names:
             return
 
@@ -95,7 +106,6 @@ class VariableFormWidget(QFrame):
             widget.deleteLater()
         self._widgets.clear()
 
-        # Remove everything from form_layout
         while self.form_layout.count():
             item = self.form_layout.takeAt(0)
             if item.widget():
@@ -110,11 +120,13 @@ class VariableFormWidget(QFrame):
             label_row = QHBoxLayout()
             var_label = QLabel(spec.name)
             var_label.setStyleSheet("font-weight: 600; font-size: 11px; color: #cbd5e1;")
+            var_label.setToolTip(f"Parameter: {spec.name}")
             label_row.addWidget(var_label)
 
             if spec.default_value:
                 def_hint = QLabel(f"(default: {spec.default_value})")
                 def_hint.setStyleSheet("font-size: 10px; color: #64748b;")
+                def_hint.setToolTip(f"Default fallback value: '{spec.default_value}'")
                 label_row.addWidget(def_hint)
             label_row.addStretch()
             f_layout.addLayout(label_row)
@@ -124,6 +136,7 @@ class VariableFormWidget(QFrame):
             if spec.has_options:
                 combo = QComboBox()
                 combo.addItems(spec.options)
+                combo.setToolTip(f"Select option for '{spec.name}'")
                 if initial_val in spec.options:
                     combo.setCurrentText(initial_val)
                 elif spec.default_value in spec.options:
@@ -134,6 +147,7 @@ class VariableFormWidget(QFrame):
             elif spec.is_multiline:
                 text_edit = QPlainTextEdit()
                 text_edit.setPlaceholderText(spec.default_value or f"Enter {spec.name}...")
+                text_edit.setToolTip(f"Multi-line input for '{spec.name}'")
                 text_edit.setPlainText(initial_val)
                 text_edit.setMaximumHeight(90)
                 text_edit.textChanged.connect(self._on_input_changed)
@@ -142,6 +156,7 @@ class VariableFormWidget(QFrame):
             else:
                 line_edit = QLineEdit()
                 line_edit.setPlaceholderText(spec.default_value or f"Enter {spec.name}...")
+                line_edit.setToolTip(f"Value for '{spec.name}'")
                 line_edit.setText(initial_val)
                 line_edit.textChanged.connect(self._on_input_changed)
                 f_layout.addWidget(line_edit)
@@ -164,6 +179,7 @@ class VariableFormWidget(QFrame):
         return values
 
     def reset_to_defaults(self):
+        """Reset all inputs to template defaults."""
         for spec in self._current_specs:
             widget = self._widgets.get(spec.name)
             if not widget:
@@ -175,6 +191,21 @@ class VariableFormWidget(QFrame):
             elif isinstance(widget, QComboBox):
                 if spec.default_value in spec.options:
                     widget.setCurrentText(spec.default_value)
+        self._emit_current_values()
+
+    def clear_all(self):
+        """Clear all inputs to empty strings."""
+        for spec in self._current_specs:
+            widget = self._widgets.get(spec.name)
+            if not widget:
+                continue
+            if isinstance(widget, QLineEdit):
+                widget.clear()
+            elif isinstance(widget, QPlainTextEdit):
+                widget.clear()
+            elif isinstance(widget, QComboBox):
+                if widget.count() > 0:
+                    widget.setCurrentIndex(0)
         self._emit_current_values()
 
     def _on_input_changed(self):

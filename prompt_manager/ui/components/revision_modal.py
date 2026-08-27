@@ -33,6 +33,7 @@ class RevisionHistoryDialog(QDialog):
 
         title = QLabel("Prompt Revision Snapshots")
         title.setStyleSheet("font-size: 15px; font-weight: 700; color: #f8fafc;")
+        title.setToolTip("Chronological immutable snapshots of this prompt")
         main_layout.addWidget(title)
 
         content_layout = QHBoxLayout()
@@ -40,6 +41,7 @@ class RevisionHistoryDialog(QDialog):
         # Left list of revisions
         self.rev_list = QListWidget()
         self.rev_list.setMaximumWidth(220)
+        self.rev_list.setToolTip("Click a snapshot to inspect its past content")
         self.rev_list.itemClicked.connect(self._on_revision_selected)
         content_layout.addWidget(self.rev_list)
 
@@ -47,6 +49,7 @@ class RevisionHistoryDialog(QDialog):
         right_layout = QVBoxLayout()
         self.preview_box = QPlainTextEdit()
         self.preview_box.setReadOnly(True)
+        self.preview_box.setToolTip("Historical snapshot preview")
         right_layout.addWidget(self.preview_box)
 
         # Buttons
@@ -55,11 +58,13 @@ class RevisionHistoryDialog(QDialog):
 
         self.restore_btn = QPushButton("Restore This Version")
         self.restore_btn.setObjectName("primaryButton")
+        self.restore_btn.setToolTip("Rollback active prompt to this selected revision snapshot")
         self.restore_btn.clicked.connect(self._restore_current)
         self.restore_btn.setEnabled(False)
         btn_row.addWidget(self.restore_btn)
 
         close_btn = QPushButton("Close")
+        close_btn.setToolTip("Close dialog without rolling back")
         close_btn.clicked.connect(self.close)
         btn_row.addWidget(close_btn)
 
@@ -81,6 +86,7 @@ class RevisionHistoryDialog(QDialog):
             label = f"Rev #{rev.revision_number} — {rev.created_at[:16]}"
             item = QListWidgetItem(label)
             item.setData(Qt.ItemDataRole.UserRole, rev)
+            item.setToolTip(f"Revision #{rev.revision_number}\nRecorded at {rev.created_at}")
             self.rev_list.addItem(item)
 
         self.rev_list.setCurrentRow(0)
