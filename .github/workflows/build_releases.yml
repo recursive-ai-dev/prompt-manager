@@ -1,0 +1,78 @@
+name: Build & Release Cross-Platform Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            artifact_name: prompt-manager-linux-x86_64
+            asset_name: prompt-manager-linux-x86_64.tar.gz
+          - os: macos-latest
+            artifact_name: prompt-manager-macos-universal
+            asset_name: prompt-manager-macos.tar.gz
+          - os: windows-latest
+            artifact_name: prompt-manager-windows-x86_64
+            asset_name: prompt-manager-windows.zip
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pyinstaller pytest
+
+      - name: Run Test Suite
+        run: |
+          pytest -v
+
+      - name: Build Standalone Executable
+        run: |
+          python desktop/build_binaries.py
+
+      - name: Package Linux Binary
+        if: runner.os == 'Linux'
+        run: |
+          cd dist
+          tar -czf ../${{ matrix.asset_name }} prompt-manager/
+
+      - name: Package macOS Application
+        if: runner.os == 'macOS'
+        run: |
+          cd dist
+          tar -czf ../${{ matrix.asset_name }} prompt-manager.app/ || tar -czf ../${{ matrix.asset_name }} prompt-manager/
+
+      - name: Package Windows Binary
+        if: runner.os == 'Windows'
+        run: |
+          cd dist
+          Compress-Archive -Path prompt-manager -DestinationPath ..\${{ matrix.asset_name }}
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: ${{ matrix.asset_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

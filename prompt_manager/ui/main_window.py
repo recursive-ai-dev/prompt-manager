@@ -32,19 +32,31 @@ from prompt_manager.config import (
 from prompt_manager.core.exporter import (
     format_json_string,
     to_anthropic_payload,
+    to_langchain_template,
+    to_llamaindex_template,
     to_markdown_frontmatter,
     to_openai_payload,
     to_plain_text,
 )
+from prompt_manager.core.licensing import get_license_manager
 from prompt_manager.core.models import Folder, Prompt, PromptRevision
 from prompt_manager.core.template_engine import extract_variables, hydrate_template
-from prompt_manager.storage.backup import export_library_to_json, import_library_from_json
+from prompt_manager.storage.backup import (
+    export_library_to_csv,
+    export_library_to_json,
+    export_library_to_markdown_zip,
+    import_library_from_csv,
+    import_library_from_json,
+)
 from prompt_manager.storage.database import Database
 from prompt_manager.storage.repository import PromptRepository
+from prompt_manager.ui.components.arena_dialog import ArenaDialog
 from prompt_manager.ui.components.editor import PromptEditorPanel
 from prompt_manager.ui.components.preview_panel import PreviewPanel
 from prompt_manager.ui.components.prompt_list import PromptListPanel
+from prompt_manager.ui.components.quick_launcher import QuickLauncherHUD
 from prompt_manager.ui.components.revision_modal import RevisionHistoryDialog
+from prompt_manager.ui.components.settings_dialog import SettingsDialog
 from prompt_manager.ui.components.sidebar import SidebarPanel
 from prompt_manager.ui.components.toast import ToastNotification
 from prompt_manager.ui.components.variable_form import VariableFormWidget
@@ -153,6 +165,7 @@ class MainWindow(QMainWindow):
         self.preview_panel.copy_prompt_requested.connect(self._on_copy_prompt)
         self.preview_panel.copy_json_requested.connect(self._on_copy_json)
         self.preview_panel.export_requested.connect(self._on_export_prompt)
+        self.preview_panel.arena_requested.connect(self._show_arena_dialog)
         self.right_splitter.addWidget(self.preview_panel)
 
         self.right_splitter.setSizes([260, 480])
@@ -199,10 +212,27 @@ class MainWindow(QMainWindow):
         export_lib_act.triggered.connect(self._export_library)
         file_menu.addAction(export_lib_act)
 
+        export_csv_act = QAction("Export Library to CSV...", self)
+        export_csv_act.setStatusTip("Export all prompts to a CSV spreadsheet format")
+        export_csv_act.triggered.connect(self._export_library_csv)
+        file_menu.addAction(export_csv_act)
+
+        export_zip_act = QAction("Export Library to Markdown Archive (.zip)...", self)
+        export_zip_act.setStatusTip("Export all prompts as individual Markdown files inside a ZIP archive")
+        export_zip_act.triggered.connect(self._export_library_zip)
+        file_menu.addAction(export_zip_act)
+
+        file_menu.addSeparator()
+
         import_lib_act = QAction("Import Library from JSON...", self)
         import_lib_act.setStatusTip("Import and merge prompts from a JSON backup file")
         import_lib_act.triggered.connect(self._import_library)
         file_menu.addAction(import_lib_act)
+
+        import_csv_act = QAction("Import Library from CSV...", self)
+        import_csv_act.setStatusTip("Import prompts from a CSV spreadsheet file")
+        import_csv_act.triggered.connect(self._import_library_csv)
+        file_menu.addAction(import_csv_act)
 
         file_menu.addSeparator()
 
@@ -271,6 +301,29 @@ class MainWindow(QMainWindow):
         run_ai_act.triggered.connect(self.preview_panel.run_pollinations)
         edit_menu.addAction(run_ai_act)
 
+        # ── Tools Menu — Power & Studio Features ───────────────────────
+        tools_menu = menubar.addMenu("&Tools")
+
+        arena_act = QAction("⚡ Multi-Model Arena...", self)
+        arena_act.setShortcut(QKeySequence("Ctrl+Shift+A"))
+        arena_act.setStatusTip("Benchmark prompt against up to 3 LLMs side-by-side with latency and cost telemetry (Ctrl+Shift+A)")
+        arena_act.triggered.connect(self._show_arena_dialog)
+        tools_menu.addAction(arena_act)
+
+        hud_act = QAction("🚀 Quick Launcher HUD...", self)
+        hud_act.setShortcut(QKeySequence("Ctrl+Space"))
+        hud_act.setStatusTip("Open floating Spotlight/Raycast-style prompt launcher (Ctrl+Space)")
+        hud_act.triggered.connect(self._show_quick_launcher)
+        tools_menu.addAction(hud_act)
+
+        tools_menu.addSeparator()
+
+        settings_act = QAction("⚙ Settings & API Keys...", self)
+        settings_act.setShortcut(QKeySequence("Ctrl+,"))
+        settings_act.setStatusTip("Configure preferences, BYOK API keys, and local models (Ctrl+,)")
+        settings_act.triggered.connect(self._show_settings_dialog)
+        tools_menu.addAction(settings_act)
+
         # ── Templates Menu — infrastructure for different templates ───
         self.templates_menu = menubar.addMenu("&Templates")
         manage_tmpl_act = QAction("Manage Templates...", self)
@@ -315,23 +368,38 @@ class MainWindow(QMainWindow):
         self._theme_group.setExclusive(True)
         self._theme_actions: dict = {}
 
-        # Group themes by variant for nicer submenu
-        dark_menu = theme_menu.addMenu("🌙 Dark Themes")
-        light_menu = theme_menu.addMenu("☀️ Light Themes")
-
+        # Group themes by style category for structured navigation
+        from collections import defaultdict
+        themes_by_cat = defaultdict(list)
         for theme in list_themes():
-            act = QAction(theme.name, self)
-            act.setCheckable(True)
-            act.setChecked(theme.id == self._current_theme_id)
-            act.setStatusTip(theme.description)
-            # Use lambda with default arg to capture theme id
-            act.triggered.connect(lambda checked, tid=theme.id: self._apply_theme(tid))
-            self._theme_group.addAction(act)
-            self._theme_actions[theme.id] = act
-            if theme.variant == "dark":
-                dark_menu.addAction(act)
-            else:
-                light_menu.addAction(act)
+            themes_by_cat[theme.category].append(theme)
+
+        cat_icons = {
+            "Core": "🌟",
+            "Glow & Neon": "⚡",
+            "Professional": "👔",
+            "High Contrast": "👁",
+            "Retro": "💾",
+            "Horror": "🩸",
+            "Terminal": "📟",
+            "Minimalist": "🔲",
+            "Cartoonish": "🍭",
+            "Blackened": "🌲",
+            "Designer": "📐",
+        }
+
+        for cat, themes in themes_by_cat.items():
+            icon = cat_icons.get(cat, "🎨")
+            cat_menu = theme_menu.addMenu(f"{icon} {cat}")
+            for theme in themes:
+                act = QAction(f"{theme.name} ({theme.variant})", self)
+                act.setCheckable(True)
+                act.setChecked(theme.id == self._current_theme_id)
+                act.setStatusTip(theme.description)
+                act.triggered.connect(lambda checked, tid=theme.id: self._apply_theme(tid))
+                self._theme_group.addAction(act)
+                self._theme_actions[theme.id] = act
+                cat_menu.addAction(act)
 
         view_menu.addSeparator()
         # Quick toggle light/dark fallback
@@ -365,6 +433,13 @@ class MainWindow(QMainWindow):
         # Help Menu
         help_menu = menubar.addMenu("&Help")
 
+        lic_act = QAction("✨ License & Pro Edition...", self)
+        lic_act.setStatusTip("View activation status or activate a Pro license key")
+        lic_act.triggered.connect(self._show_license_dialog)
+        help_menu.addAction(lic_act)
+
+        help_menu.addSeparator()
+
         shortcuts_act = QAction("Keyboard &Shortcuts", self)
         shortcuts_act.setStatusTip("Show list of keyboard shortcuts")
         shortcuts_act.triggered.connect(self._show_shortcuts_dialog)
@@ -380,6 +455,13 @@ class MainWindow(QMainWindow):
         search_f = QAction(self)
         search_f.setShortcut(QKeySequence("Ctrl+F"))
         search_f.triggered.connect(self.prompt_list.focus_search)
+        self.addAction(search_f)
+
+        # Quick Launcher shortcut Ctrl+Alt+P as alternative
+        hud_alt = QAction(self)
+        hud_alt.setShortcut(QKeySequence("Ctrl+Alt+P"))
+        hud_alt.triggered.connect(self._show_quick_launcher)
+        self.addAction(hud_alt)
         self.addAction(search_f)
 
     # ── Theme handling ───────────────────────────────────────────────
@@ -471,7 +553,16 @@ class MainWindow(QMainWindow):
             gh_part = f"  |  GitHub: {gh['repo']}@{gh.get('branch','main')} {'●' if gh.get('connected') else '○'}"
             if gh.get("last_sync"):
                 gh_part += f" (last sync {gh['last_sync'][:16]})"
-        self.status_bar.showMessage(f"Prompts: {count}  |  Database: {DATABASE_PATH}{gh_part}")
+
+        lic_status = get_license_manager().get_status()
+        if lic_status.is_pro and not lic_status.is_trial:
+            pro_badge = f"  |  ✨ PRO ({lic_status.tier.upper()})"
+        elif lic_status.is_trial:
+            pro_badge = f"  |  ⚡ TRIAL ({lic_status.days_remaining}d left)"
+        else:
+            pro_badge = "  |  🔓 FREE"
+
+        self.status_bar.showMessage(f"Prompts: {count}  |  Database: {DATABASE_PATH}{gh_part}{pro_badge}")
 
     # ------------------ Slot Handlers ------------------
 
@@ -620,12 +711,22 @@ class MainWindow(QMainWindow):
             "markdown": "Markdown Files (*.md)",
             "openai": "JSON Files (*.json)",
             "anthropic": "JSON Files (*.json)",
+            "langchain": "Python Files (*.py)",
+            "llamaindex": "Python Files (*.py)",
             "text": "Text Files (*.txt)",
+        }
+        ext_map = {
+            "markdown": "md",
+            "openai": "json",
+            "anthropic": "json",
+            "langchain": "py",
+            "llamaindex": "py",
+            "text": "txt",
         }
         filename, _ = QFileDialog.getSaveFileName(
             self,
             "Export Prompt",
-            f"{self._active_prompt.title}.{'md' if format_type == 'markdown' else 'json' if 'json' in format_type or format_type in ('openai', 'anthropic') else 'txt'}",
+            f"{self._active_prompt.title}.{ext_map.get(format_type, 'txt')}",
             filters.get(format_type, "All Files (*)"),
         )
         if not filename:
@@ -637,6 +738,10 @@ class MainWindow(QMainWindow):
             data = format_json_string(to_openai_payload(self._active_prompt, hydrated))
         elif format_type == "anthropic":
             data = format_json_string(to_anthropic_payload(self._active_prompt, hydrated))
+        elif format_type == "langchain":
+            data = to_langchain_template(self._active_prompt)
+        elif format_type == "llamaindex":
+            data = to_llamaindex_template(self._active_prompt)
         else:
             data = to_plain_text(self._active_prompt, hydrated)
 
@@ -691,21 +796,85 @@ class MainWindow(QMainWindow):
 
     def _export_library(self):
         filename, _ = QFileDialog.getSaveFileName(
-            self, "Export Prompt Library", "prompt_library.json", "JSON Files (*.json)"
+            self, "Export Prompt Library (JSON)", "prompt_library.json", "JSON Files (*.json)"
         )
         if filename:
             count = export_library_to_json(self.repo, Path(filename))
             self.toast.show_message(f"Exported {count} prompts!")
 
+    def _export_library_csv(self):
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Export Prompt Library (CSV)", "prompt_library.csv", "CSV Files (*.csv)"
+        )
+        if filename:
+            count = export_library_to_csv(self.repo, Path(filename))
+            self.toast.show_message(f"Exported {count} prompts to CSV!")
+
+    def _export_library_zip(self):
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Export Prompt Library (Markdown ZIP)", "prompt_library_md.zip", "Zip Archives (*.zip)"
+        )
+        if filename:
+            count = export_library_to_markdown_zip(self.repo, Path(filename))
+            self.toast.show_message(f"Exported {count} prompts as Markdown ZIP!")
+
     def _import_library(self):
         filename, _ = QFileDialog.getOpenFileName(
-            self, "Import Prompt Library", "", "JSON Files (*.json)"
+            self, "Import Prompt Library (JSON)", "", "JSON Files (*.json)"
         )
         if filename:
             count = import_library_from_json(self.repo, Path(filename))
             self._refresh_folders_and_tags()
             self._refresh_prompts_list()
             self.toast.show_message(f"Imported {count} prompts!")
+
+    def _import_library_csv(self):
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "Import Prompt Library (CSV)", "", "CSV Files (*.csv)"
+        )
+        if filename:
+            count = import_library_from_csv(self.repo, Path(filename))
+            self._refresh_folders_and_tags()
+            self._refresh_prompts_list()
+            self.toast.show_message(f"Imported {count} prompts from CSV!")
+
+    # ── Power Features: Arena, HUD, Settings & Licensing ────────────
+
+    def _show_arena_dialog(self):
+        """Open the Multi-Model Evaluation Arena dialog."""
+        prompt_text = self.preview_panel.get_content()
+        sys_inst = self.editor.get_system_instruction() if hasattr(self, "editor") else ""
+        dialog = ArenaDialog(prompt=prompt_text, system_instruction=sys_inst, parent=self)
+        dialog.exec()
+
+    def _show_quick_launcher(self):
+        """Open the floating Quick Launcher HUD."""
+        hud = QuickLauncherHUD(self.repo, self)
+        hud.open_in_editor_requested.connect(self._focus_prompt_in_editor)
+        hud.prompt_dispatched.connect(lambda text: self.toast.show_message("Dispatched prompt to clipboard ✓"))
+        hud.exec()
+
+    def _focus_prompt_in_editor(self, prompt_id: str):
+        """Highlight and load prompt selected from Quick Launcher into editor."""
+        self._refresh_prompts_list(select_id=prompt_id)
+        self._on_prompt_selected(prompt_id)
+        self.editor.template_edit.setFocus()
+
+    def _show_settings_dialog(self):
+        """Open settings, BYOK API keys, and preferences dialog."""
+        dialog = SettingsDialog(self)
+        dialog.theme_changed.connect(self._apply_theme)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._update_status_bar()
+            self.toast.show_message("Settings updated ✓")
+
+    def _show_license_dialog(self):
+        """Open settings dialog directly to License & Pro tab."""
+        dialog = SettingsDialog(self)
+        dialog.theme_changed.connect(self._apply_theme)
+        dialog.tabs.setCurrentIndex(2)  # Switch to License tab
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._update_status_bar()
 
     # ── GitHub Integration ──────────────────────────────────────────
 

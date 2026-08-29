@@ -29,12 +29,29 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="prompt-manager",
-        description="Prompt Manager — Prompt organizer, templating engine, and editor for Linux.",
+        description="Prompt Manager Studio — AI prompt IDE, templating engine, multi-model arena, and organizer.",
     )
     parser.add_argument(
         "--new",
         action="store_true",
         help="Launch and immediately create a new prompt",
+    )
+    parser.add_argument(
+        "--arena",
+        action="store_true",
+        help="Launch directly into the Multi-Model Evaluation Arena",
+    )
+    parser.add_argument(
+        "--hud",
+        "--quick-launch",
+        action="store_true",
+        dest="hud",
+        help="Launch directly into the floating Spotlight/Raycast-style Quick Launcher HUD",
+    )
+    parser.add_argument(
+        "--settings",
+        action="store_true",
+        help="Launch directly into the Settings & API Key configuration dialog",
     )
     parser.add_argument(
         "--new-template",
@@ -78,6 +95,23 @@ def main():
         help="Show GitHub sync status and exit",
     )
     parser.add_argument(
+        "--license-status",
+        action="store_true",
+        help="Show active Pro license, trial status, and enabled features, then exit",
+    )
+    parser.add_argument(
+        "--activate-license",
+        metavar="LICENSE_KEY",
+        help="Activate a Pro license key and exit",
+    )
+    parser.add_argument(
+        "--generate-license",
+        nargs="?",
+        const="Developer",
+        metavar="NAME",
+        help="Generate a signed Pro license key for evaluation/testing (optional: name)",
+    )
+    parser.add_argument(
         "--run-ai",
         metavar="TEXT_OR_FILE",
         help="Run prompt text or file directly through Pollinations.ai free text endpoint and print response",
@@ -113,6 +147,45 @@ def main():
                 print(f"{t.id:20} {t.name:22} ({t.variant}) — {t.description}")
         except Exception as e:
             print(f"Failed to list themes: {e}")
+        sys.exit(0)
+
+    if args.license_status:
+        ensure_directories()
+        from prompt_manager.core.licensing import get_license_manager as _get_lic
+
+        lic = _get_lic().get_status()
+        print(f"Prompt Manager License Status:")
+        print(f"  • Status:     {lic.status_message}")
+        print(f"  • Tier:       {lic.tier.upper()}")
+        print(f"  • Active:     {lic.is_active}")
+        print(f"  • Pro:        {lic.is_pro}")
+        print(f"  • License ID: {lic.license_id or 'N/A'}")
+        if lic.holder_name:
+            print(f"  • Licensed To: {lic.holder_name} ({lic.holder_email or 'no email'})")
+        if lic.is_trial:
+            print(f"  • Trial Days Left: {lic.days_remaining}")
+        print(f"  • Features:   {', '.join(lic.features) if lic.features else 'Core features only'}")
+        sys.exit(0)
+
+    if args.activate_license:
+        ensure_directories()
+        from prompt_manager.core.licensing import get_license_manager as _get_lic
+
+        success, msg = _get_lic().activate_key(args.activate_license)
+        if success:
+            print(f"✅ {msg}")
+            sys.exit(0)
+        else:
+            print(f"❌ Failed: {msg}", file=sys.stderr)
+            sys.exit(1)
+
+    if args.generate_license is not None:
+        name = args.generate_license or "Developer"
+        from prompt_manager.core.licensing import generate_license_key as _gen_key
+
+        key = _gen_key(holder_name=name, holder_email=f"{name.lower().replace(' ', '.')}@example.com")
+        print(f"Generated Pro Lifetime License for '{name}':")
+        print(key)
         sys.exit(0)
 
     if args.list_templates:
@@ -225,19 +298,25 @@ def main():
 
     window = MainWindow()
 
+    from PyQt6.QtCore import QTimer
+
     if args.new:
         window._on_new_prompt()
-    elif args.manage_templates or args.new_template:
-        # Open template manager on startup; optionally pre-create
+    elif args.arena:
         window.show()
-        # Use singleShot to ensure window is visible first
-        from PyQt6.QtCore import QTimer
-
+        QTimer.singleShot(200, window._show_arena_dialog)
+    elif args.hud:
+        window.show()
+        QTimer.singleShot(200, window._show_quick_launcher)
+    elif args.settings:
+        window.show()
+        QTimer.singleShot(200, window._show_settings_dialog)
+    elif args.manage_templates or args.new_template:
+        window.show()
         if args.new_template:
             QTimer.singleShot(250, window._new_template)
         else:
             QTimer.singleShot(250, window._show_template_manager)
-        # Still handle file arg after templates? fall through
         if args.file:
             window.import_file_from_cli(Path(args.file))
         sys.exit(app.exec())
