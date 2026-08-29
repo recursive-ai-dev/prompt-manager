@@ -124,3 +124,38 @@ def clear_github_config() -> None:
 def is_github_connected() -> bool:
     gh = get_github_config()
     return bool(gh.get("token") and gh.get("connected"))
+
+
+# ── Pollinations AI configuration ─────────────────────────────────────
+
+DEFAULT_POLLINATIONS_MODEL = "openai-fast"
+POLLINATIONS_MODELS = [
+    "openai-fast",
+    "openai",
+    "mistral",
+    "qwen",
+    "llama",
+    "deepseek",
+    "claude",
+]
+
+
+def get_pollinations_config() -> dict:
+    """Return persisted Pollinations configuration."""
+    data = _read_settings()
+    pol = data.get("pollinations", {})
+    pol.setdefault("model", DEFAULT_POLLINATIONS_MODEL)
+    pol.setdefault("api_key", "")
+    pol.setdefault("temperature", 0.7)
+    pol.setdefault("timeout", 45)
+    return pol
+
+
+def set_pollinations_config(patch: dict) -> None:
+    """Merge patch into pollinations configuration and persist."""
+    data = _read_settings()
+    pol = data.get("pollinations", {})
+    pol.update(patch)
+    data["pollinations"] = pol
+    _write_settings(data)
+
