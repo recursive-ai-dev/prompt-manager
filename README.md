@@ -17,6 +17,7 @@ A sleek, fast, and feature-rich desktop application for storing, organizing, tem
 - **🧩 Dynamic Variable Engine**: Mustache-style templating (`{{var}}`, `{{var:default}}`, `{{var|multiline}}`, `{{var|options:a,b,c}}`) with an auto-generated live form.
 - **👁️ Live Hydrated Preview**: See the rendered prompt in real time as you fill in parameters, with character, word, and estimated token counters.
 - **📋 One-Click Clipboard Dispatch**: Instant copy to clipboard as formatted text, OpenAI API JSON, or Anthropic Messages API JSON.
+- **🤖 Free AI Test Runner (Pollinations.ai)**: One-click live prompt testing via Pollinations free text API with zero API keys required (`Ctrl+R`), background non-blocking execution, real-time response metrics, model selection, and stop controls.
 - **🕒 Revision History**: Automatic and manual snapshot checkpoints to inspect diffs and rollback prompts at any time.
 - **🔗 GitHub Sync (OAuth + PAT + Git)**: Connect via OAuth Device Flow or PAT, save your library to a **new or existing repo**, push/pull via GitHub Contents API or local `git` binary.
 - **🎨 13 Handcrafted Themes**: Midnight Dark/Light, Nord, Dracula, Catppuccin Mocha/Latte, Gruvbox Dark/Light, Solarized Dark/Light, Tokyo Night, Rosé Pine, Everforest — switch via `View → Theme` or `Ctrl+T`.
@@ -47,12 +48,34 @@ Prompt Manager supports dynamic parameter extraction from your prompt templates:
 | `Ctrl + S` | Save prompt & create revision checkpoint |
 | `Ctrl + K` or `Ctrl + F` | Jump to search bar |
 | `Ctrl + Shift + C` | Copy hydrated prompt to clipboard |
+| `Ctrl + R` | Run / test prompt with free AI (Pollinations) |
 | `Ctrl + D` | Duplicate active prompt |
 | `Ctrl + Shift + T` | Manage prompt templates |
 | `Ctrl + G` | Push library to GitHub (requires GitHub connection) |
 | `Ctrl + Shift + G` | Pull library from GitHub and merge |
 | `Ctrl + T` | Toggle light/dark theme (Midnight Dark ↔ Light) |
 | `Ctrl + Q` | Exit application |
+
+---
+
+## Free AI Execution with Pollinations.ai
+
+Prompt Manager connects directly to [Pollinations.ai](https://pollinations.ai) to test prompts with real AI models for free without needing an API key:
+
+- **One-Click Test (`Ctrl+R`)**: Click `⚡ Run Free AI` in the Preview pane to send the hydrated prompt + system persona to Pollinations and view the live response.
+- **Model Switching**: Select from free models including `openai-fast`, `openai`, `mistral`, `qwen`, `llama`, `deepseek`, and `claude`.
+- **Response Metrics**: Live display of generation latency, estimated tokens, and word counts with one-click clipboard copying.
+- **Headless Terminal Inference**:
+  ```bash
+  # Test a prompt string
+  prompt-manager --run-ai "Explain quantum computing in 3 bullet points" --ai-model openai-fast
+
+  # Test a file template
+  prompt-manager --run-ai my-prompt.md
+
+  # List available Pollinations models
+  prompt-manager --list-ai-models
+  ```
 
 ---
 

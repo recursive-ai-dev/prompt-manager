@@ -263,6 +263,14 @@ class MainWindow(QMainWindow):
         dup_act.triggered.connect(lambda: self._on_duplicate_prompt(self._active_prompt.id if self._active_prompt else None))
         edit_menu.addAction(dup_act)
 
+        edit_menu.addSeparator()
+
+        run_ai_act = QAction("⚡ Run with Free AI (Pollinations)", self)
+        run_ai_act.setShortcut(QKeySequence("Ctrl+R"))
+        run_ai_act.setStatusTip("Execute the compiled prompt against Pollinations.ai free text endpoint (Ctrl+R)")
+        run_ai_act.triggered.connect(self.preview_panel.run_pollinations)
+        edit_menu.addAction(run_ai_act)
+
         # ── Templates Menu — infrastructure for different templates ───
         self.templates_menu = menubar.addMenu("&Templates")
         manage_tmpl_act = QAction("Manage Templates...", self)
@@ -576,6 +584,10 @@ class MainWindow(QMainWindow):
         values = self.var_form.get_values()
         hydrated = hydrate_template(template, values, fallback_to_defaults=True)
         self.preview_panel.set_content(hydrated)
+        self.preview_panel.set_context_metadata(
+            system_instruction=self.editor.get_system_instruction(),
+            temperature=float(self.editor.temp_spin.value()),
+        )
 
     def _on_copy_prompt(self):
         hydrated = self.preview_panel.get_content()
@@ -1066,6 +1078,7 @@ class MainWindow(QMainWindow):
             "<tr><td><b>Ctrl + S</b></td><td>Save prompt revision snapshot</td></tr>"
             "<tr><td><b>Ctrl + K</b> or <b>Ctrl + F</b></td><td>Focus search bar</td></tr>"
             "<tr><td><b>Ctrl + Shift + C</b></td><td>Copy compiled prompt to clipboard</td></tr>"
+            "<tr><td><b>Ctrl + R</b></td><td>Run / test prompt with free AI (Pollinations)</td></tr>"
             "<tr><td><b>Ctrl + D</b></td><td>Duplicate current prompt</td></tr>"
             "<tr><td><b>Ctrl + Shift + T</b></td><td>Manage prompt templates</td></tr>"
             "<tr><td><b>Ctrl + G</b></td><td>Push library to GitHub</td></tr>"

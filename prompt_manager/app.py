@@ -78,6 +78,22 @@ def main():
         help="Show GitHub sync status and exit",
     )
     parser.add_argument(
+        "--run-ai",
+        metavar="TEXT_OR_FILE",
+        help="Run prompt text or file directly through Pollinations.ai free text endpoint and print response",
+    )
+    parser.add_argument(
+        "--ai-model",
+        metavar="MODEL",
+        default="openai-fast",
+        help="Model to use with --run-ai (default: openai-fast)",
+    )
+    parser.add_argument(
+        "--list-ai-models",
+        action="store_true",
+        help="List available Pollinations.ai text models and exit",
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"{APP_DISPLAY_NAME} {APP_VERSION}",
@@ -153,6 +169,40 @@ def main():
                 print(f"Pulled {count} prompts from {gh['repo']}")
         except Exception as e:
             print(f"GitHub sync failed: {e}", file=sys.stderr)
+            sys.exit(1)
+    if args.list_ai_models:
+        from prompt_manager.integrations.pollinations_client import PollinationsClient as _PolClient
+
+        client = _PolClient()
+        models = client.list_models()
+        print("Pollinations.ai Free Text Models:")
+        for m in models:
+            name = m.get("name", "")
+            desc = m.get("description", "")
+            print(f"  • {name:20} — {desc}")
+        sys.exit(0)
+
+    if args.run_ai:
+        from prompt_manager.integrations.pollinations_client import PollinationsClient as _PolClient, PollinationsError as _PolError
+
+        raw_input = args.run_ai
+        # Check if file path
+        p = Path(raw_input)
+        if p.exists() and p.is_file():
+            prompt_content = p.read_text(encoding="utf-8")
+        else:
+            prompt_content = raw_input
+
+        client = _PolClient()
+        try:
+            print(f"Generating via Pollinations ({args.ai_model})...", file=sys.stderr)
+            result = client.generate(prompt=prompt_content, model=args.ai_model)
+            print(result)
+        except _PolError as e:
+            print(f"Pollinations error: {e}", file=sys.stderr)
+            sys.exit(1)
+        except Exception as e:
+            print(f"Failed to generate: {e}", file=sys.stderr)
             sys.exit(1)
         sys.exit(0)
 
