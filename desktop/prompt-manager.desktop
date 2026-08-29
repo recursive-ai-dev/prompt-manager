@@ -2,17 +2,39 @@
 Version=1.0
 Type=Application
 Name=Prompt Manager
-GenericName=Prompt Organizer & Editor
-Comment=Manage, organize, template, and deploy AI prompts
+GenericName=AI Prompt Organizer & Editor
+Comment=Organize, template and deploy AI prompts — 13 themes, reusable templates, GitHub OAuth/PAT sync
 Exec=prompt-manager %F
 Icon=prompt-manager
 Terminal=false
 Categories=Utility;TextEditor;
-Keywords=prompt;ai;llm;claude;chatgpt;gemini;editor;templates;
+Keywords=prompt;ai;llm;claude;chatgpt;openai;gemini;templates;github;themes;editor;deepseek;ollama;
 StartupWMClass=prompt-manager
-MimeType=application/json;text/plain;text/markdown;
-Actions=NewPrompt;
+StartupNotify=true
+MimeType=application/json;application/x-json;text/plain;text/markdown;text/x-markdown;
+Actions=NewPrompt;NewTemplate;ManageTemplates;GitHubPush;GitHubPull;
 
 [Desktop Action NewPrompt]
 Name=New Prompt
 Exec=prompt-manager --new
+Icon=document-new
+
+[Desktop Action NewTemplate]
+Name=New Template
+Exec=prompt-manager --new-template
+Icon=document-new
+
+[Desktop Action ManageTemplates]
+Name=Manage Templates
+Exec=prompt-manager --manage-templates
+Icon=preferences-system
+
+[Desktop Action GitHubPush]
+Name=Push Library to GitHub
+Exec=prompt-manager --github-push
+Icon=network-transmit
+
+[Desktop Action GitHubPull]
+Name=Pull Library from GitHub
+Exec=prompt-manager --github-pull
+Icon=network-receive

@@ -63,23 +63,13 @@ class PreviewPanel(QFrame):
 
         layout.addLayout(header_layout)
 
-        # Preview Text Viewer
+        # Preview Text Viewer — styling inherited from global theme (QFrame#previewFrame QPlainTextEdit)
         self.preview_edit = QPlainTextEdit()
         self.preview_edit.setReadOnly(True)
+        self.preview_edit.setObjectName("previewOutput")
         self.preview_edit.setToolTip("Compiled output viewer (read-only live preview)")
         mono_font = QFont("monospace", 10)
         self.preview_edit.setFont(mono_font)
-        self.preview_edit.setStyleSheet(
-            """
-            QPlainTextEdit {
-                background-color: #0f1115;
-                border: 1px solid #232833;
-                border-radius: 6px;
-                color: #e2e8f0;
-                padding: 10px;
-            }
-            """
-        )
         layout.addWidget(self.preview_edit, stretch=1)
 
         # Footer Metrics Bar
