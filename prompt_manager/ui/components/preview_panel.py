@@ -81,8 +81,9 @@ class PreviewPanel(QFrame):
 
     copy_prompt_requested = pyqtSignal()
     copy_json_requested = pyqtSignal()
-    export_requested = pyqtSignal(str)  # 'markdown', 'openai', 'anthropic', 'text'
+    export_requested = pyqtSignal(str)  # 'markdown', 'openai', 'anthropic', 'text', 'langchain', 'llamaindex'
     test_ai_requested = pyqtSignal()
+    arena_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -125,6 +126,11 @@ class PreviewPanel(QFrame):
         self.run_ai_btn.clicked.connect(self.run_pollinations)
         header_layout.addWidget(self.run_ai_btn)
 
+        self.arena_btn = QPushButton("⚡ Arena")
+        self.arena_btn.setToolTip("Open Multi-Model Evaluation Arena to benchmark side-by-side (Ctrl+Shift+A)")
+        self.arena_btn.clicked.connect(self.arena_requested.emit)
+        header_layout.addWidget(self.arena_btn)
+
         self.cancel_ai_btn = QPushButton("⏹ Stop")
         self.cancel_ai_btn.setObjectName("dangerButton")
         self.cancel_ai_btn.setToolTip("Cancel the in-flight AI request")
@@ -138,13 +144,15 @@ class PreviewPanel(QFrame):
         header_layout.addWidget(self.copy_btn)
 
         self.export_menu_btn = QPushButton("Export ▾")
-        self.export_menu_btn.setToolTip("Export this prompt as Markdown, OpenAI JSON, Anthropic JSON, or Plain Text")
+        self.export_menu_btn.setToolTip("Export this prompt as Markdown, OpenAI JSON, Anthropic JSON, LangChain, or Plain Text")
         self.export_menu = QMenu(self)
         self.export_menu.addAction("JSON API Payload", self.copy_json_requested.emit)
         self.export_menu.addSeparator()
         self.export_menu.addAction("Markdown (.md)", lambda: self.export_requested.emit("markdown"))
         self.export_menu.addAction("OpenAI Payload (.json)", lambda: self.export_requested.emit("openai"))
         self.export_menu.addAction("Anthropic Payload (.json)", lambda: self.export_requested.emit("anthropic"))
+        self.export_menu.addAction("LangChain Code (.py)", lambda: self.export_requested.emit("langchain"))
+        self.export_menu.addAction("LlamaIndex Code (.py)", lambda: self.export_requested.emit("llamaindex"))
         self.export_menu.addAction("Plain Text (.txt)", lambda: self.export_requested.emit("text"))
         self.export_menu_btn.setMenu(self.export_menu)
         header_layout.addWidget(self.export_menu_btn)

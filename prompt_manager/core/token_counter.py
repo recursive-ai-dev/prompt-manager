@@ -34,3 +34,8 @@ def calculate_metrics(text: str) -> TextMetrics:
         lines=lines,
         estimated_tokens=base_token_estimate,
     )
+
+
+def count_bpe_tokens(text: str) -> int:
+    """Convenience function returning estimated BPE token count."""
+    return calculate_metrics(text).estimated_tokens

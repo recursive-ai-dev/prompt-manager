@@ -1,8 +1,13 @@
-"""Import and export entire prompt library to JSON."""
+"""Import and export entire prompt library to JSON, CSV, and portable packages."""
+
+from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
+import zipfile
+
+from prompt_manager.core.exporter import from_csv_string, to_csv_string, to_markdown_frontmatter
 from prompt_manager.core.models import Folder, Prompt, PromptTemplate, Tag
 from prompt_manager.storage.repository import PromptRepository
 
@@ -12,14 +17,13 @@ def export_library_to_json(repo: PromptRepository, filepath: Path) -> int:
     folders = repo.list_folders()
     tags = repo.list_tags()
     prompts = repo.list_prompts()
-    # Templates are infrastructure only — may be empty; included for completeness
     try:
         templates = repo.list_templates()
     except Exception:
         templates = []
 
     data: Dict[str, Any] = {
-        "version": "1.1",
+        "version": "1.2",
         "folders": [
             {
                 "id": f.id,
@@ -112,7 +116,6 @@ def import_library_from_json(repo: PromptRepository, filepath: Path) -> int:
                 )
             )
         except Exception:
-            # Skip invalid templates but continue import (e.g., duplicate name)
             continue
 
     imported_count = 0
@@ -137,3 +140,31 @@ def import_library_from_json(repo: PromptRepository, filepath: Path) -> int:
         imported_count += 1
 
     return imported_count
+
+
+def export_library_to_csv(repo: PromptRepository, filepath: Path) -> int:
+    """Export all prompts to a CSV file."""
+    prompts = repo.list_prompts()
+    csv_content = to_csv_string(prompts)
+    filepath.write_text(csv_content, encoding="utf-8")
+    return len(prompts)
+
+
+def import_library_from_csv(repo: PromptRepository, filepath: Path) -> int:
+    """Import prompts from a CSV file."""
+    content = filepath.read_text(encoding="utf-8")
+    prompts = from_csv_string(content)
+    for p in prompts:
+        repo.save_prompt(p)
+    return len(prompts)
+
+
+def export_library_to_markdown_zip(repo: PromptRepository, filepath: Path) -> int:
+    """Export all prompts as individual Markdown files inside a ZIP archive."""
+    prompts = repo.list_prompts()
+    with zipfile.ZipFile(filepath, "w", zipfile.ZIP_DEFLATED) as zf:
+        for p in prompts:
+            clean_name = "".join(c if c.isalnum() or c in "._- " else "_" for c in p.title).strip() or "prompt"
+            md_content = to_markdown_frontmatter(p)
+            zf.writestr(f"{clean_name}.md", md_content)
+    return len(prompts)
