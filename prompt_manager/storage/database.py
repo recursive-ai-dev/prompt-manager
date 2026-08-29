@@ -20,11 +20,28 @@ CREATE TABLE IF NOT EXISTS folders (
     created_at TEXT NOT NULL
 );
 
+-- ------------------------------------------------------------------
+-- Prompt Templates (infrastructure only — no seed data)
+-- Users can create arbitrary reusable templates; Prompts may optionally
+-- reference a template via prompts.template_id
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS prompt_templates (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT DEFAULT '',
+    content TEXT NOT NULL,
+    system_instruction TEXT DEFAULT '',
+    category TEXT DEFAULT 'general',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS prompts (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
     description TEXT DEFAULT '',
     folder_id TEXT REFERENCES folders(id) ON DELETE SET NULL,
+    template_id TEXT REFERENCES prompt_templates(id) ON DELETE SET NULL,
     template_content TEXT NOT NULL,
     system_instruction TEXT DEFAULT '',
     target_model TEXT DEFAULT 'General',
@@ -80,6 +97,31 @@ CREATE TRIGGER IF NOT EXISTS prompts_au AFTER UPDATE ON prompts BEGIN
     DELETE FROM prompts_fts WHERE id = old.id;
     INSERT INTO prompts_fts(id, title, description, template_content, system_instruction)
     VALUES (new.id, new.title, new.description, new.template_content, new.system_instruction);
+END;
+
+-- Full-text search for prompt_templates
+CREATE VIRTUAL TABLE IF NOT EXISTS templates_fts USING fts5(
+    id UNINDEXED,
+    name,
+    description,
+    content,
+    system_instruction,
+    category
+);
+
+CREATE TRIGGER IF NOT EXISTS templates_ai AFTER INSERT ON prompt_templates BEGIN
+    INSERT INTO templates_fts(id, name, description, content, system_instruction, category)
+    VALUES (new.id, new.name, new.description, new.content, new.system_instruction, new.category);
+END;
+
+CREATE TRIGGER IF NOT EXISTS templates_ad AFTER DELETE ON prompt_templates BEGIN
+    DELETE FROM templates_fts WHERE id = old.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS templates_au AFTER UPDATE ON prompt_templates BEGIN
+    DELETE FROM templates_fts WHERE id = old.id;
+    INSERT INTO templates_fts(id, name, description, content, system_instruction, category)
+    VALUES (new.id, new.name, new.description, new.content, new.system_instruction, new.category);
 END;
 """
 
@@ -145,12 +187,70 @@ class Database:
         """Initialize database schema and seed default prompts if empty."""
         with self.get_connection() as conn:
             conn.executescript(SCHEMA_SQL)
+            self._migrate_add_template_infrastructure(conn)
 
             # Check if any prompt exists
             cursor = conn.execute("SELECT COUNT(*) FROM prompts")
             count = cursor.fetchone()[0]
             if count == 0:
                 self._seed_default_data(conn)
+
+    def _migrate_add_template_infrastructure(self, conn: sqlite3.Connection) -> None:
+        """Add missing template_id column and ensure templates table exists for legacy DBs."""
+        # Ensure prompt_templates exists (already handled by SCHEMA_SQL, but double-check)
+        cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='prompt_templates'")
+        if cur.fetchone() is None:
+            conn.execute(
+                """
+                CREATE TABLE prompt_templates (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    description TEXT DEFAULT '',
+                    content TEXT NOT NULL,
+                    system_instruction TEXT DEFAULT '',
+                    category TEXT DEFAULT 'general',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+        # Ensure prompts.template_id column exists
+        cur = conn.execute("PRAGMA table_info(prompts)")
+        cols = {row[1] for row in cur.fetchall()}  # second field is name
+        if "template_id" not in cols:
+            conn.execute("ALTER TABLE prompts ADD COLUMN template_id TEXT REFERENCES prompt_templates(id) ON DELETE SET NULL")
+        # Ensure templates_fts exists
+        cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='templates_fts'")
+        if cur.fetchone() is None:
+            conn.execute(
+                """
+                CREATE VIRTUAL TABLE templates_fts USING fts5(
+                    id UNINDEXED, name, description, content, system_instruction, category
+                )
+                """
+            )
+            # Triggers already in SCHEMA_SQL, but ensure they exist for older DBs
+            conn.executescript(
+                """
+                CREATE TRIGGER IF NOT EXISTS templates_ai AFTER INSERT ON prompt_templates BEGIN
+                    INSERT INTO templates_fts(id, name, description, content, system_instruction, category)
+                    VALUES (new.id, new.name, new.description, new.content, new.system_instruction, new.category);
+                END;
+                CREATE TRIGGER IF NOT EXISTS templates_ad AFTER DELETE ON prompt_templates BEGIN
+                    DELETE FROM templates_fts WHERE id = old.id;
+                END;
+                CREATE TRIGGER IF NOT EXISTS templates_au AFTER UPDATE ON prompt_templates BEGIN
+                    DELETE FROM templates_fts WHERE id = old.id;
+                    INSERT INTO templates_fts(id, name, description, content, system_instruction, category)
+                    VALUES (new.id, new.name, new.description, new.content, new.system_instruction, new.category);
+                END;
+                """
+            )
+            # Backfill FTS for any existing templates (should be 0, but handle)
+            conn.execute(
+                "INSERT INTO templates_fts(id, name, description, content, system_instruction, category) "
+                "SELECT id, name, description, content, system_instruction, category FROM prompt_templates"
+            )
 
     def _seed_default_data(self, conn: sqlite3.Connection) -> None:
         """Seed starter categories, tags, and prompts."""

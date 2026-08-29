@@ -41,7 +41,8 @@ class PromptCardWidget(QWidget):
         title_font.setBold(True)
         title_font.setPointSize(10)
         title_label.setFont(title_font)
-        title_label.setStyleSheet("color: #f1f5f9;")
+        # Color inherited from theme via QWidget palette (avoids hard-coded dark/light mismatch)
+        title_label.setStyleSheet("font-weight: 700;")
         top_row.addWidget(title_label, stretch=1)
 
         star_text = "★" if prompt.is_favorite else "☆"

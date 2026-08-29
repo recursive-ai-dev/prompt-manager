@@ -6,7 +6,7 @@ import sqlite3
 from typing import List, Optional
 import uuid
 
-from prompt_manager.core.models import Folder, Prompt, PromptRevision, Tag
+from prompt_manager.core.models import Folder, Prompt, PromptRevision, PromptTemplate, Tag
 from prompt_manager.storage.database import Database
 
 
@@ -20,7 +20,7 @@ class PromptRepository:
         with self.db.get_connection() as conn:
             cur = conn.execute(
                 """
-                SELECT id, title, description, folder_id, template_content,
+                SELECT id, title, description, folder_id, template_id, template_content,
                        system_instruction, target_model, temperature, is_favorite,
                        use_count, created_at, updated_at
                 FROM prompts WHERE id = ?
@@ -44,6 +44,7 @@ class PromptRepository:
                 is_favorite=bool(row["is_favorite"]),
                 use_count=row["use_count"],
                 tags=tags,
+                template_id=row["template_id"],
                 created_at=row["created_at"],
                 updated_at=row["updated_at"],
             )
@@ -54,8 +55,9 @@ class PromptRepository:
         tag_id: Optional[str] = None,
         favorite_only: bool = False,
         search_query: Optional[str] = None,
+        template_id: Optional[str] = None,
     ) -> List[Prompt]:
-        """Fetch prompts filtered by folder, tag, favorite, or FTS query."""
+        """Fetch prompts filtered by folder, tag, favorite, template, or FTS query."""
         with self.db.get_connection() as conn:
             params = []
             conditions = []
@@ -66,6 +68,10 @@ class PromptRepository:
             if folder_id:
                 conditions.append("p.folder_id = ?")
                 params.append(folder_id)
+
+            if template_id:
+                conditions.append("p.template_id = ?")
+                params.append(template_id)
 
             if tag_id:
                 conditions.append(
@@ -90,7 +96,7 @@ class PromptRepository:
 
             where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
             sql = f"""
-                SELECT p.id, p.title, p.description, p.folder_id, p.template_content,
+                SELECT p.id, p.title, p.description, p.folder_id, p.template_id, p.template_content,
                        p.system_instruction, p.target_model, p.temperature, p.is_favorite,
                        p.use_count, p.created_at, p.updated_at
                 FROM prompts p
@@ -116,6 +122,7 @@ class PromptRepository:
                         is_favorite=bool(row["is_favorite"]),
                         use_count=row["use_count"],
                         tags=tags,
+                        template_id=row["template_id"],
                         created_at=row["created_at"],
                         updated_at=row["updated_at"],
                     )
@@ -134,7 +141,7 @@ class PromptRepository:
                 conn.execute(
                     """
                     UPDATE prompts SET
-                        title = ?, description = ?, folder_id = ?, template_content = ?,
+                        title = ?, description = ?, folder_id = ?, template_id = ?, template_content = ?,
                         system_instruction = ?, target_model = ?, temperature = ?,
                         is_favorite = ?, updated_at = ?
                     WHERE id = ?
@@ -143,6 +150,7 @@ class PromptRepository:
                         prompt.title,
                         prompt.description,
                         prompt.folder_id,
+                        prompt.template_id,
                         prompt.template_content,
                         prompt.system_instruction,
                         prompt.target_model,
@@ -154,21 +162,24 @@ class PromptRepository:
                 )
                 prompt.updated_at = now
             else:
-                prompt.created_at = now
-                prompt.updated_at = now
+                if not prompt.created_at:
+                    prompt.created_at = now
+                if not prompt.updated_at:
+                    prompt.updated_at = now
                 conn.execute(
                     """
                     INSERT INTO prompts (
-                        id, title, description, folder_id, template_content,
+                        id, title, description, folder_id, template_id, template_content,
                         system_instruction, target_model, temperature, is_favorite,
                         use_count, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         prompt.id,
                         prompt.title,
                         prompt.description,
                         prompt.folder_id,
+                        prompt.template_id,
                         prompt.template_content,
                         prompt.system_instruction,
                         prompt.target_model,
@@ -303,6 +314,199 @@ class PromptRepository:
         with self.db.get_connection() as conn:
             cur = conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
             return cur.rowcount > 0
+
+    # ------------------ Prompt Templates ------------------
+
+    def get_template_by_id(self, template_id: str) -> Optional[PromptTemplate]:
+        with self.db.get_connection() as conn:
+            cur = conn.execute(
+                """
+                SELECT id, name, description, content, system_instruction,
+                       category, created_at, updated_at
+                FROM prompt_templates WHERE id = ?
+                """,
+                (template_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            return PromptTemplate(
+                id=row["id"],
+                name=row["name"],
+                description=row["description"] or "",
+                content=row["content"] or "",
+                system_instruction=row["system_instruction"] or "",
+                category=row["category"] or "general",
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+            )
+
+    def get_template_by_name(self, name: str) -> Optional[PromptTemplate]:
+        with self.db.get_connection() as conn:
+            cur = conn.execute(
+                """
+                SELECT id, name, description, content, system_instruction,
+                       category, created_at, updated_at
+                FROM prompt_templates WHERE name = ?
+                """,
+                (name.strip(),),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            return PromptTemplate(
+                id=row["id"],
+                name=row["name"],
+                description=row["description"] or "",
+                content=row["content"] or "",
+                system_instruction=row["system_instruction"] or "",
+                category=row["category"] or "general",
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+            )
+
+    def list_templates(
+        self,
+        category: Optional[str] = None,
+        search_query: Optional[str] = None,
+    ) -> List[PromptTemplate]:
+        """List templates, optionally filtered by category or FTS search."""
+        with self.db.get_connection() as conn:
+            params: List[str] = []
+            conditions: List[str] = []
+
+            if category and category.strip() and category.strip().lower() != "all":
+                conditions.append("t.category = ?")
+                params.append(category.strip().lower())
+
+            if search_query and search_query.strip():
+                clean = self._sanitize_fts_query(search_query)
+                if clean:
+                    conditions.append("t.id IN (SELECT id FROM templates_fts WHERE templates_fts MATCH ?)")
+                    params.append(clean)
+                else:
+                    conditions.append(
+                        "(t.name LIKE ? OR t.description LIKE ? OR t.content LIKE ?)"
+                    )
+                    like = f"%{search_query.strip()}%"
+                    params.extend([like, like, like])
+
+            where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+            sql = f"""
+                SELECT t.id, t.name, t.description, t.content, t.system_instruction,
+                       t.category, t.created_at, t.updated_at
+                FROM prompt_templates t
+                {where}
+                ORDER BY t.updated_at DESC, t.name ASC
+            """
+            cur = conn.execute(sql, params)
+            return [
+                PromptTemplate(
+                    id=row["id"],
+                    name=row["name"],
+                    description=row["description"] or "",
+                    content=row["content"] or "",
+                    system_instruction=row["system_instruction"] or "",
+                    category=row["category"] or "general",
+                    created_at=row["created_at"],
+                    updated_at=row["updated_at"],
+                )
+                for row in cur.fetchall()
+            ]
+
+    def save_template(self, template: PromptTemplate) -> PromptTemplate:
+        """Create or update a template. Enforces unique name via manual check."""
+        now = datetime.now().isoformat()
+        # Normalize
+        template.name = template.name.strip()
+        if not template.name:
+            raise ValueError("Template name must not be empty")
+        if not template.content or not template.content.strip():
+            raise ValueError("Template content must not be empty")
+        template.category = (template.category or "general").strip().lower() or "general"
+
+        with self.db.get_connection() as conn:
+            # Check unique name conflict
+            cur = conn.execute(
+                "SELECT id FROM prompt_templates WHERE name = ? AND id != ?",
+                (template.name, template.id),
+            )
+            if cur.fetchone():
+                raise ValueError(f"A template named '{template.name}' already exists")
+
+            cur = conn.execute("SELECT id FROM prompt_templates WHERE id = ?", (template.id,))
+            exists = cur.fetchone() is not None
+
+            if exists:
+                conn.execute(
+                    """
+                    UPDATE prompt_templates SET
+                        name = ?, description = ?, content = ?, system_instruction = ?,
+                        category = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        template.name,
+                        template.description,
+                        template.content,
+                        template.system_instruction,
+                        template.category,
+                        now,
+                        template.id,
+                    ),
+                )
+                template.updated_at = now
+            else:
+                if not template.created_at:
+                    template.created_at = now
+                if not template.updated_at:
+                    template.updated_at = now
+                conn.execute(
+                    """
+                    INSERT INTO prompt_templates (id, name, description, content, system_instruction, category, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        template.id,
+                        template.name,
+                        template.description,
+                        template.content,
+                        template.system_instruction,
+                        template.category,
+                        template.created_at,
+                        template.updated_at,
+                    ),
+                )
+        return template
+
+    def delete_template(self, template_id: str) -> bool:
+        """Delete a template. Prompts referencing it will have template_id set to NULL via FK."""
+        with self.db.get_connection() as conn:
+            cur = conn.execute("DELETE FROM prompt_templates WHERE id = ?", (template_id,))
+            return cur.rowcount > 0
+
+    def create_prompt_from_template(
+        self,
+        template_id: str,
+        title: Optional[str] = None,
+        folder_id: Optional[str] = None,
+        extra_tags: Optional[List[str]] = None,
+    ) -> Prompt:
+        """Instantiate a new Prompt from a template's content/system_instruction."""
+        tmpl = self.get_template_by_id(template_id)
+        if not tmpl:
+            raise ValueError(f"Template not found: {template_id}")
+        prompt = Prompt(
+            id=str(uuid.uuid4()),
+            title=title or tmpl.name,
+            description=tmpl.description,
+            folder_id=folder_id,
+            template_content=tmpl.content,
+            system_instruction=tmpl.system_instruction,
+            template_id=tmpl.id,
+            tags=list(extra_tags or []),
+        )
+        return self.save_prompt(prompt)
 
     # ------------------ Revisions ------------------
 

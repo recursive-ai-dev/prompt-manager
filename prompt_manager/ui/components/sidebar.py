@@ -44,7 +44,8 @@ class SidebarPanel(QFrame):
         # App Brand Header
         header_layout = QHBoxLayout()
         header_title = QLabel("Prompt Manager")
-        header_title.setStyleSheet("font-weight: 700; font-size: 15px; color: #f8fafc;")
+        header_title.setObjectName("brandTitle")
+        header_title.setStyleSheet("font-weight: 700; font-size: 15px;")
         header_title.setToolTip("Prompt Manager — Organize and template your prompt library")
         header_layout.addWidget(header_title)
         layout.addLayout(header_layout)

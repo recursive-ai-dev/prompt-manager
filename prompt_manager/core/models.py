@@ -51,8 +51,35 @@ class PromptRevision:
 
 
 @dataclass
+class PromptTemplate:
+    """Reusable template definition for creating prompts.
+
+    Infrastructure only — no default templates are seeded.
+    Users can create arbitrary templates (e.g. 'code-review', 'summarization',
+    'chat', 'tool-use') and instantiate Prompts from them via `template_id`.
+    """
+
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    name: str = ""
+    description: str = ""
+    content: str = ""
+    system_instruction: str = ""
+    category: str = "general"
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+    def variable_specs(self) -> List["VariableSpec"]:
+        """Derive VariableSpecs from content + system_instruction."""
+        from prompt_manager.core.template_engine import extract_variables
+
+        combined = f"{self.content}\n{self.system_instruction}"
+        return extract_variables(combined)
+
+
+@dataclass
 class Prompt:
     """Core Prompt entity."""
+
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     title: str = "Untitled Prompt"
     description: str = ""
@@ -64,5 +91,7 @@ class Prompt:
     is_favorite: bool = False
     use_count: int = 0
     tags: List[str] = field(default_factory=list)
+    # Optional link to a PromptTemplate this prompt was instantiated from
+    template_id: Optional[str] = None
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())

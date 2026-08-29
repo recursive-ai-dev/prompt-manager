@@ -32,7 +32,7 @@ class RevisionHistoryDialog(QDialog):
         main_layout.setSpacing(10)
 
         title = QLabel("Prompt Revision Snapshots")
-        title.setStyleSheet("font-size: 15px; font-weight: 700; color: #f8fafc;")
+        title.setStyleSheet("font-size: 15px; font-weight: 700;")
         title.setToolTip("Chronological immutable snapshots of this prompt")
         main_layout.addWidget(title)
 
