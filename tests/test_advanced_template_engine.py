@@ -51,6 +51,12 @@ class TestAdvancedTemplateEngine(unittest.TestCase):
         self.assertTrue(len(errors) > 0)
         self.assertTrue(any("Unmatched" in e for e in errors))
 
+    def test_syntax_errors_inverted_braces(self):
+        template = "}} Inverted {{"
+        errors = check_syntax_errors(template)
+        self.assertTrue(len(errors) > 0)
+        self.assertTrue(any("closing" in e.lower() for e in errors))
+
 
 if __name__ == "__main__":
     unittest.main()

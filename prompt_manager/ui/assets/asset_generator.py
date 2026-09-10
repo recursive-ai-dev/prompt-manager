@@ -58,7 +58,10 @@ class AccentGenerator:
 
     @classmethod
     def ensure_accents_dir(cls) -> Path:
-        ACCENTS_DIR.mkdir(parents=True, exist_ok=True)
+        try:
+            ACCENTS_DIR.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
         return ACCENTS_DIR
 
     @classmethod
@@ -152,13 +155,23 @@ class AccentGenerator:
     @classmethod
     def _write_svg(cls, filename: str, content: str) -> Path:
         target = ACCENTS_DIR / filename
-        target.write_text(content, encoding="utf-8")
+        try:
+            target.write_text(content, encoding="utf-8")
+        except OSError:
+            pass
         return target
 
     @classmethod
     def fetch_ai_theme_stamp(cls, prompt: str, filename: str) -> Optional[Path]:
         """Fetch AI generated stamp from free endpoint and process background to transparency."""
         cls.ensure_accents_dir()
+        safe_filename = Path(filename).name
+        if not safe_filename or ".." in filename:
+            return None
+        target_path = (ACCENTS_DIR / safe_filename).resolve()
+        if not target_path.is_relative_to(ACCENTS_DIR.resolve()):
+            return None
+
         encoded = urllib.parse.quote(f"icon logo vector graphic on pure white background, {prompt}")
         url = f"https://image.pollinations.ai/prompt/{encoded}?width=256&height=256&nologo=true"
 
@@ -169,12 +182,14 @@ class AccentGenerator:
                 transparent_png = BackgroundRemover.remove_color_background(
                     raw_img, target_color=(255, 255, 255), tolerance=45, feather=20
                 )
-                target_path = ACCENTS_DIR / filename
                 target_path.write_bytes(transparent_png)
                 return target_path
         except Exception:
             return None
 
 
-# Generate vector assets upon import
-AccentGenerator.generate_all_theme_assets()
+# Generate vector assets upon import if writable
+try:
+    AccentGenerator.generate_all_theme_assets()
+except Exception:
+    pass

@@ -732,21 +732,24 @@ class MainWindow(QMainWindow):
         if not filename:
             return
 
-        if format_type == "markdown":
-            data = to_markdown_frontmatter(self._active_prompt, hydrated)
-        elif format_type == "openai":
-            data = format_json_string(to_openai_payload(self._active_prompt, hydrated))
-        elif format_type == "anthropic":
-            data = format_json_string(to_anthropic_payload(self._active_prompt, hydrated))
-        elif format_type == "langchain":
-            data = to_langchain_template(self._active_prompt)
-        elif format_type == "llamaindex":
-            data = to_llamaindex_template(self._active_prompt)
-        else:
-            data = to_plain_text(self._active_prompt, hydrated)
+        try:
+            if format_type == "markdown":
+                data = to_markdown_frontmatter(self._active_prompt, hydrated)
+            elif format_type == "openai":
+                data = format_json_string(to_openai_payload(self._active_prompt, hydrated))
+            elif format_type == "anthropic":
+                data = format_json_string(to_anthropic_payload(self._active_prompt, hydrated))
+            elif format_type == "langchain":
+                data = to_langchain_template(self._active_prompt)
+            elif format_type == "llamaindex":
+                data = to_llamaindex_template(self._active_prompt)
+            else:
+                data = to_plain_text(self._active_prompt, hydrated)
 
-        Path(filename).write_text(data, encoding="utf-8")
-        self.toast.show_message("Exported successfully!")
+            Path(filename).write_text(data, encoding="utf-8")
+            self.toast.show_message("Exported successfully!")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Failed", f"Failed to export prompt:\n{e}")
 
     def _show_revision_history(self):
         if not self._active_prompt:
@@ -799,44 +802,59 @@ class MainWindow(QMainWindow):
             self, "Export Prompt Library (JSON)", "prompt_library.json", "JSON Files (*.json)"
         )
         if filename:
-            count = export_library_to_json(self.repo, Path(filename))
-            self.toast.show_message(f"Exported {count} prompts!")
+            try:
+                count = export_library_to_json(self.repo, Path(filename))
+                self.toast.show_message(f"Exported {count} prompts!")
+            except Exception as e:
+                QMessageBox.critical(self, "Export Failed", f"Failed to export library:\n{e}")
 
     def _export_library_csv(self):
         filename, _ = QFileDialog.getSaveFileName(
             self, "Export Prompt Library (CSV)", "prompt_library.csv", "CSV Files (*.csv)"
         )
         if filename:
-            count = export_library_to_csv(self.repo, Path(filename))
-            self.toast.show_message(f"Exported {count} prompts to CSV!")
+            try:
+                count = export_library_to_csv(self.repo, Path(filename))
+                self.toast.show_message(f"Exported {count} prompts to CSV!")
+            except Exception as e:
+                QMessageBox.critical(self, "Export Failed", f"Failed to export library to CSV:\n{e}")
 
     def _export_library_zip(self):
         filename, _ = QFileDialog.getSaveFileName(
             self, "Export Prompt Library (Markdown ZIP)", "prompt_library_md.zip", "Zip Archives (*.zip)"
         )
         if filename:
-            count = export_library_to_markdown_zip(self.repo, Path(filename))
-            self.toast.show_message(f"Exported {count} prompts as Markdown ZIP!")
+            try:
+                count = export_library_to_markdown_zip(self.repo, Path(filename))
+                self.toast.show_message(f"Exported {count} prompts as Markdown ZIP!")
+            except Exception as e:
+                QMessageBox.critical(self, "Export Failed", f"Failed to export library to Markdown ZIP:\n{e}")
 
     def _import_library(self):
         filename, _ = QFileDialog.getOpenFileName(
             self, "Import Prompt Library (JSON)", "", "JSON Files (*.json)"
         )
         if filename:
-            count = import_library_from_json(self.repo, Path(filename))
-            self._refresh_folders_and_tags()
-            self._refresh_prompts_list()
-            self.toast.show_message(f"Imported {count} prompts!")
+            try:
+                count = import_library_from_json(self.repo, Path(filename))
+                self._refresh_folders_and_tags()
+                self._refresh_prompts_list()
+                self.toast.show_message(f"Imported {count} prompts!")
+            except Exception as e:
+                QMessageBox.critical(self, "Import Failed", f"Failed to import prompt library:\n{e}")
 
     def _import_library_csv(self):
         filename, _ = QFileDialog.getOpenFileName(
             self, "Import Prompt Library (CSV)", "", "CSV Files (*.csv)"
         )
         if filename:
-            count = import_library_from_csv(self.repo, Path(filename))
-            self._refresh_folders_and_tags()
-            self._refresh_prompts_list()
-            self.toast.show_message(f"Imported {count} prompts from CSV!")
+            try:
+                count = import_library_from_csv(self.repo, Path(filename))
+                self._refresh_folders_and_tags()
+                self._refresh_prompts_list()
+                self.toast.show_message(f"Imported {count} prompts from CSV!")
+            except Exception as e:
+                QMessageBox.critical(self, "Import Failed", f"Failed to import CSV library:\n{e}")
 
     # ── Power Features: Arena, HUD, Settings & Licensing ────────────
 

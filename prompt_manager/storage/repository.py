@@ -130,9 +130,17 @@ class PromptRepository:
             return prompts
 
     def save_prompt(self, prompt: Prompt, create_revision: bool = False) -> Prompt:
-        """Create or update a prompt, updating tags and optionally creating a revision."""
+        """Create or update a prompt, updating tags and optionally creating a revision.
+
+        Orphan policy (explicit, never crash): folder_id/template_id are
+        nullified when the referenced row does not exist (matching the
+        ON DELETE SET NULL delete behavior). Tags are canonicalized by the
+        model (names); mapping names <-> ids is resolved here.
+        """
         now = datetime.now().isoformat()
         with self.db.get_connection() as conn:
+            prompt.folder_id = self._nullify_missing_folder(conn, prompt.folder_id)
+            prompt.template_id = self._nullify_missing_template(conn, prompt.template_id)
             # Check if prompt exists
             cur = conn.execute("SELECT id FROM prompts WHERE id = ?", (prompt.id,))
             exists = cur.fetchone() is not None
@@ -261,7 +269,9 @@ class PromptRepository:
             ]
 
     def save_folder(self, folder: Folder) -> Folder:
+        """Create or update a folder; orphan parent_id nullified, never crash."""
         with self.db.get_connection() as conn:
+            folder.parent_id = self._nullify_missing_parent(conn, folder)
             conn.execute(
                 """
                 INSERT INTO folders (id, name, parent_id, icon, sort_order, created_at)
@@ -559,6 +569,32 @@ class PromptRepository:
         )
 
     # ------------------ Helpers ------------------
+
+    def _exists(self, conn: sqlite3.Connection, table: str, row_id: Optional[str]) -> bool:
+        if not row_id:
+            return False
+        cur = conn.execute(f"SELECT 1 FROM {table} WHERE id = ?", (row_id,))
+        return cur.fetchone() is not None
+
+    def _nullify_missing_folder(self, conn: sqlite3.Connection, folder_id: Optional[str]) -> Optional[str]:
+        if folder_id and not self._exists(conn, "folders", folder_id):
+            return None
+        return folder_id
+
+    def _nullify_missing_template(self, conn: sqlite3.Connection, template_id: Optional[str]) -> Optional[str]:
+        if template_id and not self._exists(conn, "prompt_templates", template_id):
+            return None
+        return template_id
+
+    def _nullify_missing_parent(self, conn: sqlite3.Connection, folder: Folder) -> Optional[str]:
+        parent_id = folder.parent_id
+        if not parent_id:
+            return None
+        if parent_id == folder.id:
+            return None
+        if not self._exists(conn, "folders", parent_id):
+            return None
+        return parent_id
 
     def _get_tags_for_prompt(self, conn: sqlite3.Connection, prompt_id: str) -> List[str]:
         cur = conn.execute(

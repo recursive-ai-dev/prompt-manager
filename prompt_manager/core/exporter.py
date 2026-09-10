@@ -58,7 +58,12 @@ def to_anthropic_payload(prompt: Prompt, hydrated_content: str = "") -> Dict[str
 
 
 def to_markdown_frontmatter(prompt: Prompt, hydrated_content: str = "") -> str:
-    """Format prompt as Markdown with YAML frontmatter."""
+    """Format prompt as Markdown with YAML frontmatter.
+
+    LOSSY human export by design: preserves title/target_model/temperature/
+    tags/description/system/content but drops id/folder_id/template_id/
+    use_count/is_favorite. Output must NOT be reimported as data.
+    """
     tags_str = ", ".join(prompt.tags)
     content = hydrated_content if hydrated_content else prompt.template_content
 
@@ -95,6 +100,22 @@ def to_markdown_frontmatter(prompt: Prompt, hydrated_content: str = "") -> str:
     return "\n".join(lines)
 
 
+def _escape_triple_quotes(text: str) -> str:
+    """Safely escape text for inclusion in a Python triple-quoted string literal."""
+    text = text.replace("\\", "\\\\")
+    text = text.replace('"""', r'\"\"\"')
+    if text.endswith('"'):
+        bs_count = 0
+        for ch in reversed(text[:-1]):
+            if ch == "\\":
+                bs_count += 1
+            else:
+                break
+        if bs_count % 2 == 0:
+            text = text[:-1] + r'\"'
+    return text
+
+
 def to_langchain_template(prompt: Prompt) -> str:
     """Generate ready-to-run LangChain Python code snippet."""
     # Convert Mustache {{var}} or {{var:default}} to LangChain {var}
@@ -110,12 +131,12 @@ def to_langchain_template(prompt: Prompt) -> str:
 
     if clean_system.strip():
         code.extend([
-            f'system_template = """{clean_system.strip()}"""',
+            f'system_template = """{_escape_triple_quotes(clean_system.strip())}"""',
             "messages.append(SystemMessagePromptTemplate.from_template(system_template))",
         ])
 
     code.extend([
-        f'human_template = """{clean_template.strip()}"""',
+        f'human_template = """{_escape_triple_quotes(clean_template.strip())}"""',
         "messages.append(HumanMessagePromptTemplate.from_template(human_template))",
         "",
         "prompt = ChatPromptTemplate.from_messages(messages)",
@@ -132,13 +153,17 @@ def to_llamaindex_template(prompt: Prompt) -> str:
     return f'''# LlamaIndex Prompt Template
 from llama_index.core import PromptTemplate
 
-template_str = """{clean_template.strip()}"""
+template_str = """{_escape_triple_quotes(clean_template.strip())}"""
 prompt_tmpl = PromptTemplate(template_str)
 '''
 
 
 def to_csv_string(prompts: List[Prompt]) -> str:
-    """Export list of prompts as a standard CSV format."""
+    """Export list of prompts as a standard CSV format.
+
+    Includes folder_id/template_id/use_count so JSON is not the only
+    lossless path; reader accepts old files lacking these columns.
+    """
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow([
@@ -151,6 +176,9 @@ def to_csv_string(prompts: List[Prompt]) -> str:
         "temperature",
         "tags",
         "is_favorite",
+        "folder_id",
+        "template_id",
+        "use_count",
         "created_at",
         "updated_at",
     ])
@@ -166,6 +194,9 @@ def to_csv_string(prompts: List[Prompt]) -> str:
             p.temperature,
             ";".join(p.tags),
             1 if p.is_favorite else 0,
+            p.folder_id or "",
+            p.template_id or "",
+            p.use_count,
             p.created_at,
             p.updated_at,
         ])
@@ -173,8 +204,44 @@ def to_csv_string(prompts: List[Prompt]) -> str:
     return output.getvalue()
 
 
+def _safe_float(val: Any, default: float = 0.7) -> float:
+    """Safely parse a float value with fallback to default."""
+    if val is None:
+        return default
+    if isinstance(val, (int, float)):
+        return float(val)
+    val_str = str(val).strip()
+    if not val_str:
+        return default
+    try:
+        return float(val_str)
+    except (ValueError, TypeError):
+        return default
+
+
+def _safe_int(val: Any, default: int = 0) -> int:
+    """Safely parse an integer value with fallback to default."""
+    if val is None:
+        return default
+    if isinstance(val, int):
+        return val
+    val_str = str(val).strip()
+    if not val_str:
+        return default
+    try:
+        return int(float(val_str))
+    except (ValueError, TypeError):
+        return default
+
+
 def from_csv_string(csv_text: str) -> List[Prompt]:
-    """Parse CSV text back into Prompt objects."""
+    """Parse CSV text back into Prompt objects.
+
+    Accepts both current headers (with folder_id/template_id/use_count)
+    and legacy headers without them (orphan-prone fields default to
+    None/0 via Prompt coercion). Malformed numerics fall back via the
+    model's coercers (temperature->0.7, use_count->0).
+    """
     reader = csv.DictReader(io.StringIO(csv_text))
     prompts: List[Prompt] = []
 
@@ -185,11 +252,14 @@ def from_csv_string(csv_text: str) -> List[Prompt]:
             id=row.get("id") or str(uuid.uuid4()),
             title=row.get("title", "Untitled Prompt"),
             description=row.get("description", ""),
+            folder_id=(row.get("folder_id") or None) if "folder_id" in row else None,
+            template_id=(row.get("template_id") or None) if "template_id" in row else None,
             template_content=row.get("template_content", ""),
             system_instruction=row.get("system_instruction", ""),
             target_model=row.get("target_model", "General"),
-            temperature=float(row.get("temperature", 0.7)),
-            is_favorite=bool(int(row.get("is_favorite", 0))),
+            temperature=_safe_float(row.get("temperature"), default=0.7),
+            is_favorite=bool(_safe_int(row.get("is_favorite"), default=0)),
+            use_count=_safe_int(row.get("use_count"), default=0) if "use_count" in row else 0,
             tags=tags,
             created_at=row.get("created_at", ""),
             updated_at=row.get("updated_at", ""),

@@ -256,27 +256,35 @@ class QuickLauncherHUD(QDialog):
         self._variable_values[var_name] = value
         self._update_preview()
 
+    def _get_hydrated_full_text(self) -> str:
+        if not self._active_prompt:
+            return ""
+        hydrated_user = hydrate_template(self._active_prompt.template_content, self._variable_values).strip()
+        hydrated_system = hydrate_template(self._active_prompt.system_instruction, self._variable_values).strip()
+        if hydrated_system:
+            return f"[SYSTEM INSTRUCTION]\n{hydrated_system}\n\n[USER PROMPT]\n{hydrated_user}"
+        return hydrated_user
+
     def _update_preview(self):
         if not self._active_prompt:
             self.preview_edit.clear()
             return
-        hydrated = hydrate_template(self._active_prompt.template_content, self._variable_values)
-        self.preview_edit.setPlainText(hydrated)
+        self.preview_edit.setPlainText(self._get_hydrated_full_text())
 
     def dispatch_active_prompt(self):
         """Copy hydrated prompt to system clipboard, increment use count, and close/hide."""
         if not self._active_prompt:
             return
 
-        hydrated = hydrate_template(self._active_prompt.template_content, self._variable_values)
-        QGuiApplication.clipboard().setText(hydrated)
+        full_text = self._get_hydrated_full_text()
+        QGuiApplication.clipboard().setText(full_text)
 
         try:
             self.repo.increment_use_count(self._active_prompt.id)
         except Exception:
             pass
 
-        self.prompt_dispatched.emit(hydrated)
+        self.prompt_dispatched.emit(full_text)
         self.status_label.setText("Copied to clipboard! ✓")
         self.accept()
 

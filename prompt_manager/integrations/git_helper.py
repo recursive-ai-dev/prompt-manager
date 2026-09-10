@@ -9,7 +9,7 @@ All functions are thin wrappers around `subprocess` and raise GitError on failur
 
 from __future__ import annotations
 
-import os
+import re
 import shutil
 import subprocess
 import urllib.parse
@@ -23,6 +23,15 @@ class GitError(Exception):
 
 def is_git_available() -> bool:
     return shutil.which("git") is not None
+
+
+def _scrub_token(text: str) -> str:
+    """Scrub OAuth/PAT tokens from command strings and error messages."""
+    if not text:
+        return ""
+    scrubbed = re.sub(r"://([^:@]+:)?([^@]+)@", r"://\1***@", text)
+    scrubbed = re.sub(r"(ghp_[a-zA-Z0-9]{20,}|github_pat_[a-zA-Z0-9_]{30,})", "***", scrubbed)
+    return scrubbed
 
 
 def _run_git(args: list[str], cwd: Optional[Path] = None, env: Optional[dict] = None) -> Tuple[str, str]:
@@ -39,12 +48,13 @@ def _run_git(args: list[str], cwd: Optional[Path] = None, env: Optional[dict] = 
             timeout=60,
         )
     except subprocess.TimeoutExpired as e:
-        raise GitError(f"git command timed out: {' '.join(cmd)}") from e
+        safe_cmd = [_scrub_token(c) for c in cmd]
+        raise GitError(f"git command timed out: {' '.join(safe_cmd)}") from e
     if result.returncode != 0:
-        # Scrub token from error if present
-        stderr = result.stderr.strip()
-        stdout = result.stdout.strip()
-        raise GitError(f"git {' '.join(args)} failed:\n{stderr or stdout}")
+        safe_args = [_scrub_token(a) for a in args]
+        stderr = _scrub_token(result.stderr.strip())
+        stdout = _scrub_token(result.stdout.strip())
+        raise GitError(f"git {' '.join(safe_args)} failed:\n{stderr or stdout}")
     return result.stdout.strip(), result.stderr.strip()
 
 
@@ -118,8 +128,12 @@ def commit_and_push(
         raise GitError(f"Local path does not exist: {local_path}")
     init_repo(local_path, repo_full_name, token, branch=branch)
 
-    # Write file
-    target = local_path / file_name
+    # Write file safely preventing path traversal
+    if not file_name or ".." in file_name or Path(file_name).is_absolute():
+        raise GitError(f"Invalid or unsafe file path: '{file_name}'")
+    target = (local_path / file_name).resolve()
+    if not target.is_relative_to(local_path.resolve()):
+        raise GitError(f"Path traversal detected: '{file_name}' resolves outside repository")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
 

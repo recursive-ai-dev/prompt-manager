@@ -95,12 +95,30 @@ class KeyVault:
             return {}
 
     def _write_fallback_vault(self, data: Dict[str, Any]) -> None:
-        """Encrypt and persist the local fallback vault."""
+        """Encrypt and persist the local fallback vault with restricted permissions (0600)."""
         self.vault_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.chmod(self.vault_path.parent, 0o700)
+        except Exception:
+            pass
+
         seed = _get_machine_seed()
         serialized = json.dumps(data).encode("utf-8")
         encrypted = _xor_cipher(serialized, seed)
-        self.vault_path.write_bytes(encrypted)
+
+        temp_path = self.vault_path.with_suffix(".tmp")
+        fd = os.open(str(temp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            with open(fd, "wb") as f:
+                f.write(encrypted)
+        except Exception:
+            os.close(fd)
+            raise
+        temp_path.replace(self.vault_path)
+        try:
+            os.chmod(self.vault_path, 0o600)
+        except Exception:
+            pass
 
     # ── Core Key Operations ─────────────────────────────────────────────
 

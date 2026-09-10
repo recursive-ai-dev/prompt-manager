@@ -69,6 +69,51 @@ class TestLLMProviders(unittest.TestCase):
         self.assertFalse(resp.is_success)
         self.assertIn("API key not configured", resp.error)
 
+    @patch("urllib.request.urlopen")
+    def test_http_error_body_extracted(self, mock_urlopen):
+        import io
+        import urllib.error
+        err_json = b'{"error": {"message": "You exceeded your current quota."}}'
+        mock_urlopen.side_effect = urllib.error.HTTPError(
+            url="https://api.openai.com/v1/chat/completions",
+            code=429,
+            msg="Too Many Requests",
+            hdrs={},
+            fp=io.BytesIO(err_json),
+        )
+        req = LLMRequest(prompt="Hello", model_id="openai:gpt-4o")
+        resp = self.client.execute(req)
+        self.assertFalse(resp.is_success)
+        self.assertIn("You exceeded your current quota.", resp.error)
+
+    @patch("urllib.request.urlopen")
+    def test_openai_empty_choices_handled(self, mock_urlopen):
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b'{"choices": []}'
+        mock_resp.__enter__.return_value = mock_resp
+        mock_urlopen.return_value = mock_resp
+
+        req = LLMRequest(prompt="Hello", model_id="openai:gpt-4o")
+        resp = self.client.execute(req)
+        self.assertFalse(resp.is_success)
+        self.assertIn("no choices", resp.error)
+
+    @patch("urllib.request.urlopen")
+    def test_gemini_url_encoding(self, mock_urlopen):
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b'{"candidates": [{"content": {"parts": [{"text": "Gemini answer"}]}}]}'
+        mock_resp.__enter__.return_value = mock_resp
+        mock_urlopen.return_value = mock_resp
+
+        req = LLMRequest(prompt="Hello Gemini", model_id="gemini:gemini-2.5-flash")
+        resp = self.client.execute(req)
+        self.assertTrue(resp.is_success)
+        self.assertEqual(resp.content, "Gemini answer")
+
+        call_req = mock_urlopen.call_args[0][0]
+        self.assertIn("gemini-2.5-flash", call_req.full_url)
+        self.assertIn("mock-gemini-key", call_req.full_url)
+
 
 if __name__ == "__main__":
     unittest.main()

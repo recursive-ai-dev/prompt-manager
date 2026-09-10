@@ -7,7 +7,13 @@ from pathlib import Path
 from typing import Any, Dict, List
 import zipfile
 
-from prompt_manager.core.exporter import from_csv_string, to_csv_string, to_markdown_frontmatter
+from prompt_manager.core.exporter import (
+    _safe_float,
+    _safe_int,
+    from_csv_string,
+    to_csv_string,
+    to_markdown_frontmatter,
+)
 from prompt_manager.core.models import Folder, Prompt, PromptTemplate, Tag
 from prompt_manager.storage.repository import PromptRepository
 
@@ -70,23 +76,36 @@ def export_library_to_json(repo: PromptRepository, filepath: Path) -> int:
         ],
     }
 
-    filepath.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp_path = filepath.with_suffix(filepath.suffix + ".tmp")
+    try:
+        tmp_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        tmp_path.replace(filepath)
+    except Exception:
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise
     return len(prompts)
 
 
 def import_library_from_json(repo: PromptRepository, filepath: Path) -> int:
-    """Import prompts, folders, tags, and prompt_templates from a JSON backup file."""
+    """Import prompts, folders, tags, and prompt_templates from JSON backup.
+
+    Missing ids fall back to fresh UUIDs via model coercion (never KeyError);
+    malformed numerics fall back (temperature->0.7, use_count/sort_order->0);
+    orphan folder_id/template_id/parent_id are nullified by the repository
+    (never crash). Revisions are intentionally not part of the format.
+    """
     content = filepath.read_text(encoding="utf-8")
     data = json.loads(content)
 
     for f_data in data.get("folders", []):
         repo.save_folder(
             Folder(
-                id=f_data["id"],
-                name=f_data["name"],
+                id=f_data.get("id") or None,
+                name=f_data.get("name", ""),
                 parent_id=f_data.get("parent_id"),
                 icon=f_data.get("icon", "folder"),
-                sort_order=f_data.get("sort_order", 0),
+                sort_order=_safe_int(f_data.get("sort_order"), default=0),
                 created_at=f_data.get("created_at", ""),
             )
         )
@@ -94,8 +113,8 @@ def import_library_from_json(repo: PromptRepository, filepath: Path) -> int:
     for t_data in data.get("tags", []):
         repo.save_tag(
             Tag(
-                id=t_data["id"],
-                name=t_data["name"],
+                id=t_data.get("id") or None,
+                name=t_data.get("name", ""),
                 color=t_data.get("color", "#3b82f6"),
             )
         )
@@ -105,7 +124,7 @@ def import_library_from_json(repo: PromptRepository, filepath: Path) -> int:
         try:
             repo.save_template(
                 PromptTemplate(
-                    id=tmpl_data["id"],
+                    id=tmpl_data.get("id") or None,
                     name=tmpl_data.get("name", "Untitled Template"),
                     description=tmpl_data.get("description", ""),
                     content=tmpl_data.get("content", ""),
@@ -121,7 +140,7 @@ def import_library_from_json(repo: PromptRepository, filepath: Path) -> int:
     imported_count = 0
     for p_data in data.get("prompts", []):
         p = Prompt(
-            id=p_data["id"],
+            id=p_data.get("id") or None,
             title=p_data.get("title", "Imported Prompt"),
             description=p_data.get("description", ""),
             folder_id=p_data.get("folder_id"),
@@ -129,9 +148,9 @@ def import_library_from_json(repo: PromptRepository, filepath: Path) -> int:
             template_content=p_data.get("template_content", ""),
             system_instruction=p_data.get("system_instruction", ""),
             target_model=p_data.get("target_model", "General"),
-            temperature=float(p_data.get("temperature", 0.7)),
+            temperature=_safe_float(p_data.get("temperature"), default=0.7),
             is_favorite=bool(p_data.get("is_favorite", False)),
-            use_count=int(p_data.get("use_count", 0)),
+            use_count=_safe_int(p_data.get("use_count"), default=0),
             tags=p_data.get("tags", []),
             created_at=p_data.get("created_at", ""),
             updated_at=p_data.get("updated_at", ""),
@@ -146,7 +165,14 @@ def export_library_to_csv(repo: PromptRepository, filepath: Path) -> int:
     """Export all prompts to a CSV file."""
     prompts = repo.list_prompts()
     csv_content = to_csv_string(prompts)
-    filepath.write_text(csv_content, encoding="utf-8")
+    tmp_path = filepath.with_suffix(filepath.suffix + ".tmp")
+    try:
+        tmp_path.write_text(csv_content, encoding="utf-8")
+        tmp_path.replace(filepath)
+    except Exception:
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise
     return len(prompts)
 
 
@@ -162,9 +188,25 @@ def import_library_from_csv(repo: PromptRepository, filepath: Path) -> int:
 def export_library_to_markdown_zip(repo: PromptRepository, filepath: Path) -> int:
     """Export all prompts as individual Markdown files inside a ZIP archive."""
     prompts = repo.list_prompts()
-    with zipfile.ZipFile(filepath, "w", zipfile.ZIP_DEFLATED) as zf:
-        for p in prompts:
-            clean_name = "".join(c if c.isalnum() or c in "._- " else "_" for c in p.title).strip() or "prompt"
-            md_content = to_markdown_frontmatter(p)
-            zf.writestr(f"{clean_name}.md", md_content)
+    used_names: set[str] = set()
+    tmp_path = filepath.with_suffix(filepath.suffix + ".tmp")
+    try:
+        with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for p in prompts:
+                clean_name = "".join(c if c.isalnum() or c in "._- " else "_" for c in p.title).strip() or "prompt"
+                filename = f"{clean_name}.md"
+                if filename in used_names:
+                    filename = f"{clean_name}_{p.id[:8]}.md"
+                counter = 1
+                while filename in used_names:
+                    filename = f"{clean_name}_{p.id[:8]}_{counter}.md"
+                    counter += 1
+                used_names.add(filename)
+                md_content = to_markdown_frontmatter(p)
+                zf.writestr(filename, md_content)
+        tmp_path.replace(filepath)
+    except Exception:
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise
     return len(prompts)

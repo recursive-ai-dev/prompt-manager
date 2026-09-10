@@ -34,13 +34,13 @@ if ! "${PYTHON_BIN}" -c "import PyQt6" 2>/dev/null; then
     echo ""
     echo "⚠ PyQt6 not found for ${PYTHON_BIN}."
     echo "  Install it via your distro package manager or pip:"
-    echo "    pip install --user PyQt6>=6.4.0"
+    echo "    pip install --user PyQt6>=6.4.0 --break-system-packages"
     echo "    # or Debian/Ubuntu: sudo apt install python3-pyqt6"
     echo "    # or Fedora:       sudo dnf install python3-qt6"
     echo ""
-    read -r -p "Attempt 'pip install --user -e .'? [y/N] " _ans
+    read -r -p "Attempt 'pip install --user -e . --break-system-packages'? [y/N] " _ans
     if [[ "${_ans:-}" =~ ^[Yy]$ ]]; then
-        "${PYTHON_BIN}" -m pip install --user -e "${REPO_DIR}"
+        "${PYTHON_BIN}" -m pip install --user -e "${REPO_DIR}" --break-system-packages
     else
         echo "Aborting. Install PyQt6 then re-run ./desktop/install.sh"
         exit 1
@@ -55,12 +55,12 @@ if "${PYTHON_BIN}" -m pip show prompt-manager >/dev/null 2>&1; then
     echo "  Ensuring it is up-to-date..."
     # Refresh editable install so new modules (github_client, template_manager, themes) are seen
     if [[ -f "${REPO_DIR}/pyproject.toml" ]]; then
-        "${PYTHON_BIN}" -m pip install --user -e "${REPO_DIR}" --quiet 2>&1 | tail -n 5 || true
+        "${PYTHON_BIN}" -m pip install --user -e "${REPO_DIR}" --quiet --break-system-packages 2>&1 | tail -n 5 || true
         touch "${PIP_EDITABLE_MARKER}"
     fi
 else
     echo "pip package not yet installed — will use PYTHONPATH wrapper (dev mode)."
-    echo "Tip: for a proper install run:  pip install --user -e ."
+    echo "Tip: for a proper install run:  pip install --user -e . --break-system-packages"
 fi
 
 # ── 1. Launcher wrapper ~/.local/bin/prompt-manager ──────────────────

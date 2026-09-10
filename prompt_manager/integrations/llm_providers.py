@@ -307,6 +307,40 @@ class LLMClient:
                 estimated_cost_usd=cost,
                 error=None,
             )
+        except urllib.error.HTTPError as e:
+            elapsed = time.time() - start_time
+            err_msg = f"HTTP {e.code}: {e.reason}"
+            try:
+                if e.fp:
+                    raw_body = e.read().decode("utf-8", errors="replace")
+                    try:
+                        parsed = json.loads(raw_body)
+                        if isinstance(parsed, dict):
+                            err_obj = parsed.get("error")
+                            if isinstance(err_obj, dict) and "message" in err_obj:
+                                err_msg = f"HTTP {e.code}: {err_obj['message']}"
+                            elif isinstance(err_obj, str):
+                                err_msg = f"HTTP {e.code}: {err_obj}"
+                            elif "message" in parsed:
+                                err_msg = f"HTTP {e.code}: {parsed['message']}"
+                            else:
+                                err_msg = f"HTTP {e.code}: {raw_body[:200]}"
+                    except Exception:
+                        if raw_body.strip():
+                            err_msg = f"HTTP {e.code}: {raw_body.strip()[:200]}"
+            except Exception:
+                pass
+            return LLMResponse(
+                content="",
+                elapsed_seconds=elapsed,
+                model_id=request.model_id,
+                provider=provider,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=0,
+                total_tokens=prompt_tokens,
+                estimated_cost_usd=0.0,
+                error=err_msg,
+            )
         except Exception as e:
             elapsed = time.time() - start_time
             return LLMResponse(
@@ -366,7 +400,13 @@ class LLMClient:
 
         with urllib.request.urlopen(http_req, timeout=req.timeout) as resp:
             body = json.loads(resp.read().decode("utf-8"))
-            return body["choices"][0]["message"]["content"].strip()
+            choices = body.get("choices") or []
+            if not choices:
+                raise ValueError("OpenAI returned no choices in response.")
+            content = choices[0].get("message", {}).get("content")
+            if content is None:
+                content = ""
+            return content.strip()
 
     def _call_anthropic(self, req: LLMRequest, model_name: str) -> str:
         api_key = self.vault.get_api_key("anthropic")
@@ -418,7 +458,9 @@ class LLMClient:
         if req.max_tokens:
             payload["generationConfig"]["maxOutputTokens"] = req.max_tokens
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+        encoded_model = urllib.parse.quote(model_name, safe="")
+        encoded_key = urllib.parse.quote(api_key, safe="")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{encoded_model}:generateContent?key={encoded_key}"
         headers = {"Content-Type": "application/json"}
         data = json.dumps(payload).encode("utf-8")
         http_req = urllib.request.Request(url, data=data, headers=headers, method="POST")
@@ -493,4 +535,10 @@ class LLMClient:
 
         with urllib.request.urlopen(http_req, timeout=req.timeout) as resp:
             body = json.loads(resp.read().decode("utf-8"))
-            return body["choices"][0]["message"]["content"].strip()
+            choices = body.get("choices") or []
+            if not choices:
+                raise ValueError("OpenRouter returned no choices in response.")
+            content = choices[0].get("message", {}).get("content")
+            if content is None:
+                content = ""
+            return content.strip()

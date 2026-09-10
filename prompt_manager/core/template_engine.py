@@ -107,17 +107,36 @@ def get_unfilled_variables(template: str, values: Dict[str, str]) -> List[str]:
 def check_syntax_errors(template: str) -> List[str]:
     """Check for malformed braces or syntax errors in the prompt template."""
     errors = []
-    # Check for unmatched {{ without }}
-    openings = [m.start() for m in re.finditer(r"\{\{", template)]
-    closings = [m.start() for m in re.finditer(r"\}\}", template)]
+    tokens = []
+    for m in re.finditer(r"\{\{|\}\}", template):
+        tokens.append((m.start(), m.group(0)))
 
-    if len(openings) != len(closings):
+    depth = 0
+    nested_reported = False
+    closing_first_reported = False
+
+    for pos, token in tokens:
+        if token == "{{":
+            depth += 1
+            if depth > 1 and not nested_reported:
+                errors.append(f"Nested '{{{{' detected without closing braces at position {pos}.")
+                nested_reported = True
+        elif token == "}}":
+            depth -= 1
+            if depth < 0:
+                if not closing_first_reported:
+                    errors.append(f"Unmatched closing '}}}}' found before opening '{{{{' at position {pos}.")
+                    closing_first_reported = True
+                depth = 0
+
+    openings_count = sum(1 for _, t in tokens if t == "{{")
+    closings_count = sum(1 for _, t in tokens if t == "}}")
+
+    if openings_count != closings_count:
         errors.append(
-            f"Unmatched braces: found {len(openings)} '{{{{' and {len(closings)} '}}}}'."
+            f"Unmatched braces: found {openings_count} '{{{{' and {closings_count} '}}}}'."
         )
-
-    # Check for nested {{ {{
-    if re.search(r"\{\{[^}]*\{\{", template):
-        errors.append("Nested '{{' detected without closing braces.")
+    elif depth > 0:
+        errors.append("Unmatched opening '{{' detected.")
 
     return errors

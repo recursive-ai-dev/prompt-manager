@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
-    { name = "Developer", email = "developer@local" }
+    { name = "Developer", email = "developer@example.com" }
 ]
 keywords = ["prompt", "ai", "llm", "claude", "openai", "gemini", "templates", "github", "pyqt6", "kde", "wayland"]
 classifiers = [

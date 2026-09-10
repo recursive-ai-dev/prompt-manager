@@ -55,7 +55,9 @@ def _read_settings() -> dict:
 def _write_settings(data: dict) -> None:
     """Write settings dict atomically."""
     ensure_directories()
-    CONFIG_FILE_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    temp_path = CONFIG_FILE_PATH.with_suffix(".tmp")
+    temp_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    temp_path.replace(CONFIG_FILE_PATH)
 
 
 def get_theme_id() -> str:

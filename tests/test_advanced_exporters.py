@@ -101,6 +101,52 @@ class TestAdvancedExporters(unittest.TestCase):
             self.assertEqual(imported_count, total_initial)
             self.assertEqual(len(new_repo.list_prompts()), total_initial)
 
+    def test_python_code_export_escaping_triple_quotes(self):
+        prompt_with_quotes = Prompt(
+            id="p_quotes",
+            title="Code With Quotes",
+            description="Docstring tester",
+            template_content='Run: """print("evil")""" and end with quote"',
+            system_instruction='System: """instructions""" and backslash \\',
+        )
+        lc_code = to_langchain_template(prompt_with_quotes)
+        li_code = to_llamaindex_template(prompt_with_quotes)
+
+        # Must compile without SyntaxError
+        compile(lc_code, "<string>", "exec")
+        compile(li_code, "<string>", "exec")
+
+    def test_from_csv_empty_numeric_fields(self):
+        csv_text = (
+            "id,title,description,template_content,system_instruction,target_model,temperature,tags,is_favorite,created_at,updated_at\n"
+            "id1,Test Title,Desc,Hello {{var}},Sys,General,,,0,,\n"
+        )
+        prompts = from_csv_string(csv_text)
+        self.assertEqual(len(prompts), 1)
+        self.assertEqual(prompts[0].temperature, 0.7)
+        self.assertFalse(prompts[0].is_favorite)
+
+    def test_export_markdown_zip_duplicate_titles(self):
+        import zipfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            zip_path = Path(tmpdir) / "duplicates.zip"
+            db_path = Path(tmpdir) / "dup.db"
+            db = Database(db_path)
+            repo = PromptRepository(db)
+            for p in repo.list_prompts():
+                repo.delete_prompt(p.id)
+
+            repo.save_prompt(Prompt(id="id11111111", title="Same Title", template_content="content 1"))
+            repo.save_prompt(Prompt(id="id22222222", title="Same Title", template_content="content 2"))
+
+            count = export_library_to_markdown_zip(repo, zip_path)
+            self.assertEqual(count, 2)
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                names = zf.namelist()
+                self.assertEqual(len(names), 2)
+                self.assertIn("Same Title.md", names)
+                self.assertTrue(any(n.startswith("Same Title_") and n.endswith(".md") for n in names))
+
 
 if __name__ == "__main__":
     unittest.main()

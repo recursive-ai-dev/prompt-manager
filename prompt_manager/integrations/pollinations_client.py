@@ -108,8 +108,6 @@ class PollinationsClient:
             params["seed"] = str(seed)
         if json_mode:
             params["jsonMode"] = "true"
-        if self.api_key:
-            params["key"] = self.api_key
 
         encoded_prompt = urllib.parse.quote(clean_prompt, safe="")
         query_string = urllib.parse.urlencode(params)
@@ -183,10 +181,16 @@ class PollinationsClient:
                 try:
                     parsed = json.loads(raw)
                     if isinstance(parsed, dict) and "choices" in parsed:
-                        choice = parsed["choices"][0]
-                        return choice.get("message", {}).get("content", raw).strip()
+                        choices = parsed.get("choices") or []
+                        if choices:
+                            choice = choices[0]
+                            content = choice.get("message", {}).get("content", raw)
+                            if content is not None:
+                                return str(content).strip()
                     elif isinstance(parsed, dict) and "content" in parsed:
-                        return parsed["content"].strip()
+                        content = parsed.get("content")
+                        if content is not None:
+                            return str(content).strip()
                 except Exception:
                     pass
                 return raw.strip()

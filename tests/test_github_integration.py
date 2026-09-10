@@ -16,7 +16,10 @@ from prompt_manager.core.github_sync import (
 from prompt_manager.core.models import Prompt
 from prompt_manager.integrations.git_helper import (
     build_authenticated_remote_url,
+    commit_and_push,
     is_git_available,
+    GitError,
+    _run_git,
 )
 from prompt_manager.integrations.github_client import (
     GithubClient,
@@ -170,6 +173,46 @@ class TestGitHubIntegration(unittest.TestCase):
         )
         self.assertGreaterEqual(count, 1)
         self.assertEqual(mock_client.create_or_update_file.call_count, count)
+
+    def test_git_error_scrubs_sensitive_tokens(self):
+        token = "ghp_VerySecretToken123456789"
+        url = f"https://oauth2:{token}@github.com/org/repo.git"
+        with patch("prompt_manager.integrations.git_helper.is_git_available", return_value=True), \
+             patch("subprocess.run") as mock_run:
+            mock_proc = MagicMock()
+            mock_proc.returncode = 1
+            mock_proc.stderr = f"fatal: unable to access '{url}': The requested URL returned error: 403"
+            mock_proc.stdout = ""
+            mock_run.return_value = mock_proc
+
+            with self.assertRaises(GitError) as ctx:
+                _run_git(["push", url, "main"])
+
+            err_msg = str(ctx.exception)
+            self.assertNotIn(token, err_msg)
+            self.assertIn("***", err_msg)
+
+    def test_commit_and_push_rejects_path_traversal(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_path = Path(tmpdir)
+            with self.assertRaises(GitError):
+                commit_and_push(
+                    repo_path,
+                    "org/repo",
+                    "dummy_token",
+                    "../evil.txt",
+                    "content",
+                    "commit message",
+                )
+            with self.assertRaises(GitError):
+                commit_and_push(
+                    repo_path,
+                    "org/repo",
+                    "dummy_token",
+                    "/etc/passwd",
+                    "content",
+                    "commit message",
+                )
 
 
 if __name__ == "__main__":

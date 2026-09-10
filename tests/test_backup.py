@@ -146,6 +146,36 @@ class TestBackup(unittest.TestCase):
         self.assertIsNone(p.template_id)
         self.assertEqual(p.tags, ["legacy"])
 
+    def test_import_json_malformed_numeric_fields(self):
+        corrupt_data = {
+            "version": "1.2",
+            "folders": [
+                {
+                    "id": "f-bad",
+                    "name": "Bad Folder",
+                    "sort_order": "not_an_int",
+                }
+            ],
+            "prompts": [
+                {
+                    "id": "p-bad",
+                    "title": "Bad Types",
+                    "temperature": "not_a_float",
+                    "use_count": None,
+                }
+            ],
+        }
+        fpath = Path(self.temp_dir.name) / "corrupt.json"
+        fpath.write_text(json.dumps(corrupt_data), encoding="utf-8")
+
+        count = import_library_from_json(self.repo, fpath)
+        self.assertEqual(count, 1)
+
+        p = self.repo.get_prompt_by_id("p-bad")
+        self.assertIsNotNone(p)
+        self.assertEqual(p.temperature, 0.7)
+        self.assertEqual(p.use_count, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
