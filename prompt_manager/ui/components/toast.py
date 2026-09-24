@@ -1,6 +1,6 @@
 """Floating toast notification popup for desktop actions."""
 
-from PyQt6.QtCore import QPoint, QPropertyAnimation, QTimer, Qt
+from PyQt6.QtCore import QPropertyAnimation, QTimer, Qt
 from PyQt6.QtWidgets import QGraphicsOpacityEffect, QLabel, QWidget
 
 

@@ -6,11 +6,9 @@ from datetime import datetime
 import json
 import os
 import urllib.parse
-import urllib.request
-import webbrowser
 from typing import List, Optional
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QObject
+from PyQt6.QtCore import Qt, pyqtSignal, QThread, QObject
 from PyQt6.QtGui import QDesktopServices, QGuiApplication
 from PyQt6.QtCore import QUrl
 from PyQt6.QtWidgets import (
@@ -23,12 +21,10 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
     QMessageBox,
     QProgressBar,
     QPushButton,
     QTabWidget,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -66,9 +62,6 @@ class _DevicePollWorker(QObject):
 
     def run_poll(self):
         import time
-        import urllib.parse
-        import urllib.request
-        import json
 
         deadline = time.time() + self.expires_in
         current_interval = self.interval

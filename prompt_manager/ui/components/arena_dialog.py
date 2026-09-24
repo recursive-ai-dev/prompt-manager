@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from typing import List, Optional
 
 from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
@@ -11,25 +10,20 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
     QFrame,
-    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
-    QScrollArea,
     QSlider,
     QSplitter,
     QVBoxLayout,
-    QWidget,
 )
 
 from prompt_manager.core.arena import ArenaResult, run_arena_comparison
-from prompt_manager.core.licensing import FEATURE_ARENA, get_license_manager
 from prompt_manager.integrations.llm_providers import (
     MODEL_CATALOG,
-    LLMClient,
     LLMResponse,
     get_model_info,
 )

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QGuiApplication
@@ -28,7 +28,7 @@ from prompt_manager.config import (
     set_pollinations_config,
 )
 from prompt_manager.core.token_counter import calculate_metrics
-from prompt_manager.integrations.pollinations_client import PollinationsClient, PollinationsError
+from prompt_manager.integrations.pollinations_client import PollinationsClient
 from prompt_manager.ui.components.thread_helpers import WorkerLifetime, track_worker
 
 

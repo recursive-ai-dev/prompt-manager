@@ -6,14 +6,13 @@ with a robust encrypted/obfuscated local fallback store for headless or unsuppor
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import json
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from prompt_manager.config import APP_CONFIG_DIR, ensure_directories
+from prompt_manager.config import APP_CONFIG_DIR
 
 KEYRING_SERVICE_NAME = "prompt-manager"
 VAULT_FILE_PATH = APP_CONFIG_DIR / "vault.dat"

@@ -2,7 +2,7 @@ import tempfile
 from pathlib import Path
 import unittest
 
-from prompt_manager.core.models import Folder, Prompt, Tag
+from prompt_manager.core.models import Prompt
 from prompt_manager.storage.database import Database
 from prompt_manager.storage.repository import PromptRepository
 

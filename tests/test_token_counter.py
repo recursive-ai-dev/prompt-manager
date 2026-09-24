@@ -1,7 +1,7 @@
 """Tests for token counter and text metrics calculation."""
 
 import unittest
-from prompt_manager.core.token_counter import calculate_metrics, TextMetrics
+from prompt_manager.core.token_counter import calculate_metrics
 
 
 class TestTokenCounter(unittest.TestCase):

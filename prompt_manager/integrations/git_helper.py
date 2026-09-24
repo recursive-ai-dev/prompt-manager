@@ -161,8 +161,6 @@ def clone_repo(local_path: Path, repo_full_name: str, token: str, branch: str = 
     local_path.mkdir(parents=True, exist_ok=True)
     remote_url = build_authenticated_remote_url(repo_full_name, token)
     # Clone without branch first, then checkout
-    parent = local_path.parent
-    tmp_name = local_path.name
     # Use clone to temp then move? Simpler: git clone url local_path (git handles empty dir as target)
     # git clone expects target not to exist or empty — we made it exist empty, so remove and clone
     # To avoid complexity, clone to parent with tmp

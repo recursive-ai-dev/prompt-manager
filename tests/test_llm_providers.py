@@ -10,7 +10,6 @@ from prompt_manager.integrations.llm_providers import (
     MODEL_CATALOG,
     LLMClient,
     LLMRequest,
-    LLMResponse,
     get_model_info,
     list_models_by_provider,
 )

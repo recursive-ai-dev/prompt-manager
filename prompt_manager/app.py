@@ -8,7 +8,13 @@ import signal
 import sys
 from PyQt6.QtWidgets import QApplication
 
-from prompt_manager.config import APP_DISPLAY_NAME, APP_NAME, APP_VERSION, ensure_directories
+from prompt_manager.config import (
+    APP_DISPLAY_NAME,
+    APP_NAME,
+    APP_VERSION,
+    DATABASE_PATH,
+    ensure_directories,
+)
 from prompt_manager.ui.main_window import MainWindow
 
 
@@ -296,7 +302,24 @@ def main():
     app.setApplicationDisplayName(APP_DISPLAY_NAME)
     app.setDesktopFileName("prompt-manager.desktop")
 
-    window = MainWindow()
+    from PyQt6.QtWidgets import QMessageBox
+
+    try:
+        window = MainWindow()
+    except Exception as e:
+        # Without this, a corrupted database (or any constructor failure)
+        # kills the app with a bare traceback and no explanation.
+        QMessageBox.critical(
+            None,
+            f"{APP_DISPLAY_NAME} — Startup Error",
+            "The application could not be started:\n\n"
+            f"{type(e).__name__}: {e}\n\n"
+            f"Database location:\n{DATABASE_PATH}\n\n"
+            "If the database is corrupted, close every running copy of the app and retry. "
+            "Moving or renaming the database file (and any -wal/-shm files next to it) "
+            "will let the app start fresh.",
+        )
+        sys.exit(1)
 
     from PyQt6.QtCore import QTimer
 

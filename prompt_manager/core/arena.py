@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import concurrent.futures
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from prompt_manager.integrations.llm_providers import (
     LLMClient,
     LLMRequest,
     LLMResponse,
-    get_model_info,
 )
 
 

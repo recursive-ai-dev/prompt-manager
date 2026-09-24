@@ -185,15 +185,22 @@ class Database:
 
     def _init_db(self) -> None:
         """Initialize database schema and seed default prompts if empty."""
-        with self.get_connection() as conn:
-            conn.executescript(SCHEMA_SQL)
-            self._migrate_add_template_infrastructure(conn)
+        conn = self.get_connection()
+        try:
+            # NOTE: `with conn` only manages the transaction (commit/rollback)
+            # — the connection itself must be closed explicitly, otherwise the
+            # DB file handle lingers until garbage collection.
+            with conn:
+                conn.executescript(SCHEMA_SQL)
+                self._migrate_add_template_infrastructure(conn)
 
-            # Check if any prompt exists
-            cursor = conn.execute("SELECT COUNT(*) FROM prompts")
-            count = cursor.fetchone()[0]
-            if count == 0:
-                self._seed_default_data(conn)
+                # Check if any prompt exists
+                cursor = conn.execute("SELECT COUNT(*) FROM prompts")
+                count = cursor.fetchone()[0]
+                if count == 0:
+                    self._seed_default_data(conn)
+        finally:
+            conn.close()
 
     def _migrate_add_template_infrastructure(self, conn: sqlite3.Connection) -> None:
         """Add missing template_id column and ensure templates table exists for legacy DBs."""

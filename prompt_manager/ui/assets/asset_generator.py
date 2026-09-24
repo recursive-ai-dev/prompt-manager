@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import io
 import math
-import os
 from pathlib import Path
 import urllib.parse
 import urllib.request

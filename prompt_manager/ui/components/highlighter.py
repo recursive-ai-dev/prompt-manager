@@ -1,6 +1,5 @@
 """Syntax highlighter for prompt templates, mustache variables, and markdown structures."""
 
-import re
 from typing import Dict, Optional
 
 from PyQt6.QtCore import QRegularExpression

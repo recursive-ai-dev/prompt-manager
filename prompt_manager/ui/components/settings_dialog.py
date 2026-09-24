@@ -2,18 +2,12 @@
 
 from __future__ import annotations
 
-import json
-import os
-from pathlib import Path
-from typing import Dict, Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QDesktopServices, QFont
+from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QDialog,
-    QFileDialog,
     QFormLayout,
     QFrame,
     QGroupBox,
@@ -30,29 +24,19 @@ from PyQt6.QtWidgets import (
 
 from prompt_manager.config import (
     APP_CONFIG_DIR,
-    APP_DATA_DIR,
-    APP_DISPLAY_NAME,
-    APP_VERSION,
     DATABASE_PATH,
     DEFAULT_TARGET_MODELS,
-    get_setting,
     get_theme_id,
-    set_setting,
     set_theme_id,
 )
 from prompt_manager.core.keychain import get_key_vault
-from prompt_manager.core.licensing import (
-    ALL_PRO_FEATURES,
-    generate_license_key,
-    get_license_manager,
-    verify_license_key,
-)
+from prompt_manager.core.licensing import get_license_manager
 from prompt_manager.integrations.llm_providers import (
     LLMClient,
     LLMRequest,
     discover_ollama_models,
 )
-from prompt_manager.ui.theme import THEME_IDS, list_themes
+from prompt_manager.ui.theme import list_themes
 
 
 class SettingsDialog(QDialog):

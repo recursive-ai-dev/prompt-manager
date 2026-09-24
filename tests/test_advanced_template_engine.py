@@ -4,7 +4,6 @@ import unittest
 from prompt_manager.core.template_engine import (
     extract_variables,
     hydrate_template,
-    get_unfilled_variables,
     check_syntax_errors,
 )
 

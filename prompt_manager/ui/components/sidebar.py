@@ -1,6 +1,6 @@
 """Sidebar navigation panel for collections, folders, and tags."""
 
-from typing import List, Optional
+from typing import List
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QFrame,
@@ -13,7 +13,6 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QVBoxLayout,
-    QWidget,
 )
 
 from prompt_manager.core.models import Folder, Tag

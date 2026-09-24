@@ -83,8 +83,16 @@ def _http_request(
             payload = json.loads(raw) if raw else {}
         except Exception:
             payload = {"message": raw}
-        msg = payload.get("message") or payload.get("error_description") or payload.get("error") or raw or f"HTTP {e.code}"
-        raise GithubError(msg, status=e.code, payload=payload) from e
+        # Malformed error bodies (non-dict JSON such as a bare list/string)
+        # would crash payload.get() here and replace the original HTTP error
+        # with an AttributeError.
+        if isinstance(payload, dict):
+            msg = payload.get("message") or payload.get("error_description") or payload.get("error") or raw or f"HTTP {e.code}"
+        else:
+            msg = raw or f"HTTP {e.code}"
+        if not isinstance(msg, str):
+            msg = str(msg)
+        raise GithubError(msg, status=e.code, payload=payload if isinstance(payload, dict) else {"message": msg}) from e
     except urllib.error.URLError as e:
         raise GithubError(str(e.reason) if hasattr(e, "reason") else str(e)) from e
 

@@ -27,7 +27,7 @@ from prompt_manager.config import (
     get_theme_id,
     set_theme_id,
     get_github_config,
-    is_github_connected,
+    set_github_config,
 )
 from prompt_manager.core.exporter import (
     format_json_string,

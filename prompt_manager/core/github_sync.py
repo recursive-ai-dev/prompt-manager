@@ -12,12 +12,10 @@ Uses GithubClient for API and git_helper for local git.
 from __future__ import annotations
 
 import base64
-import json
 import tempfile
 from pathlib import Path
 from typing import Optional, Tuple
 
-from prompt_manager.core.models import Prompt
 from prompt_manager.integrations.github_client import GithubClient, GithubError
 from prompt_manager.storage.repository import PromptRepository
 from prompt_manager.storage.backup import export_library_to_json, import_library_from_json
@@ -84,7 +82,9 @@ def pull_library_via_api(
     Returns (imported_count, file_metadata). Raises GithubError if file not found.
     """
     file_info = client.get_file(full_name, file_path.lstrip("/"), ref=branch)
-    if not file_info or "content" not in file_info:
+    # A null/missing content value (malformed API response or non-blob entry)
+    # would crash the base64 decoding below — treat it as "not found".
+    if not file_info or not file_info.get("content"):
         raise GithubError(f"File not found on GitHub: {full_name}/{file_path} @ {branch}", status=404)
 
     # Content is base64-encoded

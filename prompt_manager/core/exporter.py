@@ -6,8 +6,7 @@ import csv
 import io
 import json
 import math
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 import uuid
 
 from prompt_manager.core.models import Prompt

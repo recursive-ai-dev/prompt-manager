@@ -11,7 +11,7 @@ The `prompt_templates` table is created empty via `Database._init_db` and
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont

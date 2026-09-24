@@ -1,7 +1,7 @@
 """Prompt variable templating, token extraction, and hydration engine."""
 
 import re
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List
 from prompt_manager.core.models import VariableSpec
 
 # Matches: {{name}}, {{name:default}}, {{name|modifier}}, {{name:default|modifier}}

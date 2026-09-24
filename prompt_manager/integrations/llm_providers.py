@@ -13,7 +13,7 @@ Zero external pip dependencies: Built entirely with Python standard library urll
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import json
 import time
 from typing import Any, Dict, List, Optional

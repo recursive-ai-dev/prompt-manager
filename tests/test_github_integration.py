@@ -13,11 +13,9 @@ from prompt_manager.core.github_sync import (
     push_individual_prompts_via_api,
     validate_github_config,
 )
-from prompt_manager.core.models import Prompt
 from prompt_manager.integrations.git_helper import (
     build_authenticated_remote_url,
     commit_and_push,
-    is_git_available,
     GitError,
     _run_git,
 )

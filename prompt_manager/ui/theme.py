@@ -19,7 +19,7 @@ Each theme is cross-platform OS font-aware (macOS, Windows, Linux) and built fro
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from prompt_manager.ui.fonts import get_ui_font_css
 

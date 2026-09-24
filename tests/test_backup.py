@@ -27,7 +27,7 @@ class TestBackup(unittest.TestCase):
         # Create folder
         folder = self.repo.save_folder(Folder(name="DevOps", icon="server"))
         # Create tag
-        tag = self.repo.save_tag(Tag(name="kubernetes", color="#326ce5"))
+        self.repo.save_tag(Tag(name="kubernetes", color="#326ce5"))
         # Create template
         tmpl = self.repo.save_template(
             PromptTemplate(

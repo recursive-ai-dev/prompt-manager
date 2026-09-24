@@ -1,7 +1,7 @@
 """Central prompt editor with syntax highlighting, metadata inputs, and autosave signals."""
 
 from typing import List, Optional
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QTimer, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QComboBox,
@@ -13,7 +13,6 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QVBoxLayout,
-    QWidget,
 )
 
 from prompt_manager.config import DEFAULT_TARGET_MODELS

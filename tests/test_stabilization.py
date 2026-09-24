@@ -17,6 +17,14 @@ Qt coverage (skipped automatically when PyQt6 is unavailable):
 - QuickLauncherHUD clears stale variable inputs when nothing matches
 - thread_helpers releases workers promptly for finished threads and keeps
   them alive (referenced) while their thread is still running
+- MainWindow._github_quick_push records last_sync after a successful push
+  (regression: set_github_config was referenced but never imported, so a
+  successful push raised NameError and was reported as a failure)
+
+Second-pass (static analysis + deep audit) coverage:
+- github_client._http_request survives non-dict JSON error bodies
+- github_sync.pull_library_via_api rejects null content with GithubError
+- Database._init_db closes the connection it opens
 """
 
 import json
@@ -332,6 +340,105 @@ class TestRepositoryNameTolerance(unittest.TestCase):
         self.assertEqual(self.repo.get_template_by_name("alpha").name, "alpha")
 
 
+# ── GitHub client / sync error-path resilience ──────────────────────────
+
+
+class TestGithubClientErrorParsing(unittest.TestCase):
+    def test_non_dict_json_error_body_still_raises_github_error(self):
+        """A non-dict JSON error body (e.g. a bare list) used to crash the
+        except-handler itself (AttributeError) and mask the HTTP error."""
+        import io
+        from urllib.error import HTTPError
+
+        import prompt_manager.integrations.github_client as gc
+
+        def fake_urlopen(req, timeout=None):
+            raise HTTPError(
+                req.full_url, 422, "Unprocessable Entity", None, io.BytesIO(b'["unexpected","shape"]')
+            )
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with self.assertRaises(gc.GithubError) as ctx:
+                gc._http_request("GET", "https://api.github.com/x")
+        self.assertEqual(ctx.exception.status, 422)
+        self.assertIn("unexpected", str(ctx.exception))
+
+    def test_dict_error_body_message_preferred(self):
+        import io
+        from urllib.error import HTTPError
+
+        import prompt_manager.integrations.github_client as gc
+
+        def fake_urlopen(req, timeout=None):
+            raise HTTPError(
+                req.full_url, 401, "Unauthorized", None, io.BytesIO(b'{"message": "Bad credentials"}')
+            )
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with self.assertRaises(gc.GithubError) as ctx:
+                gc._http_request("GET", "https://api.github.com/x")
+        self.assertEqual(str(ctx.exception), "Bad credentials")
+
+
+class TestGithubSyncPullResilience(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.db = Database(Path(self.temp_dir.name) / "t.db")
+        self.repo = PromptRepository(self.db)
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_pull_with_null_content_raises_github_error(self):
+        from unittest.mock import MagicMock
+
+        import prompt_manager.core.github_sync as gs
+
+        client = MagicMock()
+        client.get_file.return_value = {"content": None}
+        with self.assertRaises(gs.GithubError):
+            gs.pull_library_via_api(self.repo, client, "o/r")
+
+    def test_pull_with_undecodable_content_raises_github_error(self):
+        from unittest.mock import MagicMock
+
+        import prompt_manager.core.github_sync as gs
+
+        client = MagicMock()
+        client.get_file.return_value = {"content": "!!!!not-base64-!!!"}
+        with self.assertRaises(gs.GithubError):
+            gs.pull_library_via_api(self.repo, client, "o/r")
+
+
+class TestDatabaseConnectionLifecycle(unittest.TestCase):
+    def test_init_closes_its_connection(self):
+        """sqlite3 `with conn` only manages the transaction — the connection
+        must be closed explicitly or the DB file handle lingers until GC."""
+        import sqlite3
+
+        db_path = Path(tempfile.mkdtemp()) / "t.db"
+        created: list = []
+        orig_get_connection = Database.get_connection
+
+        def tracking(self):
+            conn = orig_get_connection(self)
+            created.append(conn)
+            return conn
+
+        with patch.object(Database, "get_connection", tracking):
+            Database(db_path)
+
+        def is_closed(c):
+            try:
+                c.execute("SELECT 1")
+                return False
+            except sqlite3.ProgrammingError:
+                return True
+
+        self.assertTrue(created, "_init_db should open a connection")
+        self.assertTrue(all(is_closed(c) for c in created), "all connections must be closed")
+
+
 # ── Qt widget regression tests ──────────────────────────────────────────
 
 PyQt6 = __import__("importlib").util.find_spec("PyQt6")
@@ -345,7 +452,7 @@ if HAS_QT:
 
     from PyQt6.QtCore import QPropertyAnimation, QThread
     from PyQt6.QtTest import QTest
-    from PyQt6.QtWidgets import QApplication, QComboBox, QLineEdit
+    from PyQt6.QtWidgets import QApplication, QComboBox
 
     _app = QApplication.instance() or QApplication([])
 
@@ -536,6 +643,53 @@ if HAS_QT:
             QTest.qWait(30)
             self.assertEqual(len(hud._var_inputs), 0)
             self.assertFalse(hud.var_container.isVisible())
+
+    class TestGithubQuickPushRecordsSync(_QtTempBase):
+        """Regression: set_github_config was called in _github_quick_push but
+        never imported — every *successful* push raised NameError, was caught
+        by the generic handler, and was reported to the user as a failure
+        (and last_sync was never recorded)."""
+
+        def test_successful_push_records_last_sync(self):
+            import prompt_manager.core.github_sync as gs
+            from PyQt6.QtWidgets import QMessageBox
+
+            from prompt_manager.config import get_github_config, set_github_config
+
+            w = self._main_window()
+            set_github_config({"token": "ghp_testtoken", "repo": "o/r"})
+            with patch.object(
+                gs, "push_library_via_api", return_value={"commit": {"sha": "abcdef1234567"}}
+            ), patch.object(
+                QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes
+            ), patch.object(
+                QMessageBox, "critical"
+            ) as critical_mock:
+                w._github_quick_push()
+            critical_mock.assert_not_called()
+            gh = get_github_config()
+            self.assertTrue(gh.get("last_sync"))
+            self.assertEqual(gh["last_sync_sha"], "abcdef1")
+
+        def test_push_failure_does_not_record_sync(self):
+            import prompt_manager.core.github_sync as gs
+            from PyQt6.QtWidgets import QMessageBox
+
+            from prompt_manager.config import get_github_config, set_github_config
+
+            w = self._main_window()
+            set_github_config({"token": "ghp_testtoken", "repo": "o/r"})
+            with patch.object(
+                gs, "push_library_via_api", side_effect=gs.GithubError("boom", status=403)
+            ), patch.object(
+                QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes
+            ), patch.object(
+                QMessageBox, "critical"
+            ) as critical_mock:
+                w._github_quick_push()
+            critical_mock.assert_called_once()
+            gh = get_github_config()
+            self.assertFalse(gh.get("last_sync"))
 
     class TestThreadHelpers(_QtTempBase):
         def test_finished_thread_released_immediately(self):
