@@ -37,6 +37,10 @@ class ToastNotification(QLabel):
         self._fade_anim.finished.connect(self._on_fade_finished)
 
     def show_message(self, text: str, duration_ms: int = 1800):
+        # A fade-out animation from a previous toast may still be running;
+        # if not stopped, it keeps animating opacity to 0 and makes the new
+        # toast disappear immediately.
+        self._fade_anim.stop()
         self.setText(text)
         self.adjustSize()
 

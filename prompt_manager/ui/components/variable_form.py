@@ -77,10 +77,20 @@ class VariableFormWidget(QFrame):
         self.no_vars_label.setStyleSheet("color: #64748b; font-style: italic; padding: 12px 0;")
         main_layout.addWidget(self.no_vars_label)
 
+    @staticmethod
+    def _spec_signature(spec: VariableSpec) -> tuple:
+        """Comparable identity of a spec: name, default, widget type, options.
+
+        Rebuilding is skipped only when the full signature matches — comparing
+        names alone left the form desynced when a variable's default,
+        options, or multiline flag changed while its name stayed the same.
+        """
+        return (spec.name, spec.default_value, spec.is_multiline, tuple(spec.options))
+
     def set_variables(self, specs: List[VariableSpec]):
         """Update form fields based on variable specifications, preserving existing typed values."""
-        current_names = [s.name for s in self._current_specs]
-        new_names = [s.name for s in specs]
+        current_sig = [self._spec_signature(s) for s in self._current_specs]
+        new_sig = [self._spec_signature(s) for s in specs]
 
         self._current_specs = specs
 
@@ -98,7 +108,7 @@ class VariableFormWidget(QFrame):
         self.clear_btn.show()
         self.reset_btn.show()
 
-        if current_names == new_names:
+        if current_sig == new_sig:
             return
 
         # Clear existing fields

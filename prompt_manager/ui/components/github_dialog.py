@@ -8,7 +8,7 @@ import os
 import urllib.parse
 import urllib.request
 import webbrowser
-from typing import Optional
+from typing import List, Optional
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QObject
 from PyQt6.QtGui import QDesktopServices, QGuiApplication
@@ -43,6 +43,7 @@ from prompt_manager.integrations.github_client import (
 )
 from prompt_manager.integrations.github_client import ACCESS_TOKEN_URL
 from prompt_manager.core.github_sync import validate_github_config
+from prompt_manager.ui.components.thread_helpers import WorkerLifetime, track_worker
 
 
 class _DevicePollWorker(QObject):
@@ -134,6 +135,7 @@ class GithubDialog(QDialog):
         self._device_response: Optional[DeviceCodeResponse] = None
         self._poll_thread: Optional[QThread] = None
         self._poll_worker: Optional[_DevicePollWorker] = None
+        self._worker_holders: List[WorkerLifetime] = []
         self._verified_username: str = ""
 
         self._build_ui()
@@ -611,7 +613,27 @@ class GithubDialog(QDialog):
         finally:
             QGuiApplication.restoreOverrideCursor()
 
+    def _release_polling(self, wait_ms: int) -> None:
+        """Stop the polling thread and release thread/worker references safely.
+
+        If the thread is still running when the wait times out (mid
+        sleep/HTTP), the worker is held until the thread has truly finished
+        so its C++ object is never destroyed under a live thread.
+        """
+        thread = self._poll_thread
+        worker = self._poll_worker
+        self._poll_thread = None
+        self._poll_worker = None
+        if thread is None:
+            return
+        thread.quit()
+        if worker is None or thread.wait(wait_ms):
+            return  # terminated: dropping the references is safe now
+        track_worker(worker, thread, self._worker_holders)
+
     def _start_poll_thread(self, client_id: str, device_code: str, interval: int, expires_in: int):
+        # Drop lifetimes of threads that have already finished
+        self._worker_holders = [h for h in self._worker_holders if not h.released]
         # Clean previous
         self._cancel_device_flow(silent=True)
         self._poll_thread = QThread(self)
@@ -626,11 +648,7 @@ class GithubDialog(QDialog):
     def _cancel_device_flow(self, silent: bool = False):
         if self._poll_worker:
             self._poll_worker.stop()
-        if self._poll_thread:
-            self._poll_thread.quit()
-            self._poll_thread.wait(1000)
-        self._poll_worker = None
-        self._poll_thread = None
+        self._release_polling(1000)
         if not silent:
             self.oauth_progress.setVisible(False)
             self.oauth_poll_status.setText("Cancelled")

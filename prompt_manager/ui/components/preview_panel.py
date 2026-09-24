@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QGuiApplication
@@ -29,6 +29,7 @@ from prompt_manager.config import (
 )
 from prompt_manager.core.token_counter import calculate_metrics
 from prompt_manager.integrations.pollinations_client import PollinationsClient, PollinationsError
+from prompt_manager.ui.components.thread_helpers import WorkerLifetime, track_worker
 
 
 class _PollinationsWorker(QObject):
@@ -92,6 +93,7 @@ class PreviewPanel(QFrame):
         self._temperature = 0.7
         self._poll_thread: Optional[QThread] = None
         self._poll_worker: Optional[_PollinationsWorker] = None
+        self._worker_holders: List[WorkerLifetime] = []
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
@@ -270,6 +272,9 @@ class PreviewPanel(QFrame):
         # Allocate splitter sizes if newly opened
         self.splitter.setSizes([300, 300])
 
+        # Drop lifetimes of threads that have already finished
+        self._worker_holders = [h for h in self._worker_holders if not h.released]
+
         # Clean previous worker if running
         self.cancel_pollinations(silent=True)
 
@@ -288,14 +293,29 @@ class PreviewPanel(QFrame):
         self._poll_worker.error.connect(self._on_ai_error)
         self._poll_thread.start()
 
+    def _release_current_run(self, wait_ms: int) -> None:
+        """Stop the in-flight run and release thread/worker references safely.
+
+        If the thread is still running when the wait times out (blocking
+        network call in progress), the worker is held until the thread has
+        truly finished so its C++ object is never destroyed under a live
+        thread.
+        """
+        thread = self._poll_thread
+        worker = self._poll_worker
+        self._poll_thread = None
+        self._poll_worker = None
+        if thread is None:
+            return
+        thread.quit()
+        if worker is None or thread.wait(wait_ms):
+            return  # terminated: dropping the references is safe now
+        track_worker(worker, thread, self._worker_holders)
+
     def cancel_pollinations(self, silent: bool = False):
         if self._poll_worker:
             self._poll_worker.cancel()
-        if self._poll_thread:
-            self._poll_thread.quit()
-            self._poll_thread.wait(500)
-        self._poll_worker = None
-        self._poll_thread = None
+        self._release_current_run(500)
         if not silent:
             self.ai_progress.hide()
             self.ai_status_label.setText("Cancelled")
@@ -322,11 +342,7 @@ class PreviewPanel(QFrame):
         self._clean_thread()
 
     def _clean_thread(self):
-        if self._poll_thread:
-            self._poll_thread.quit()
-            self._poll_thread.wait(200)
-        self._poll_worker = None
-        self._poll_thread = None
+        self._release_current_run(200)
 
     def _on_copy_ai_response(self):
         text = self.ai_response_edit.toPlainText().strip()

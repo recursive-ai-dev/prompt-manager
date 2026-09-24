@@ -335,19 +335,27 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(self, "API Key Missing", f"Please enter a key for {provider.title()} first.")
             return
 
-        # Save temporarily in vault to test
+        # Test the key as typed WITHOUT persisting it: remember the stored
+        # key, write the candidate for the test, then restore the stored
+        # value afterwards. (Persisting here meant clicking "Test" — and
+        # then "Cancel" — still overwrote the saved key in the vault.)
+        previous_key = self.vault.get_api_key(provider)
         self.vault.set_api_key(provider, key)
-        client = LLMClient(self.vault)
-        model_map = {
-            "openai": "openai:gpt-4o-mini",
-            "anthropic": "anthropic:claude-3-5-haiku-20241022",
-            "gemini": "gemini:gemini-2.5-flash",
-            "openrouter": "openrouter:openrouter/auto",
-        }
-        model_id = model_map.get(provider, "pollinations:openai-fast")
+        try:
+            client = LLMClient(self.vault)
+            model_map = {
+                "openai": "openai:gpt-4o-mini",
+                "anthropic": "anthropic:claude-3-5-haiku-20241022",
+                "gemini": "gemini:gemini-2.5-flash",
+                "openrouter": "openrouter:openrouter/auto",
+            }
+            model_id = model_map.get(provider, "pollinations:openai-fast")
 
-        req = LLMRequest(prompt="Say 'Connected successfully!' in 3 words.", model_id=model_id, timeout=15)
-        resp = client.execute(req)
+            req = LLMRequest(prompt="Say 'Connected successfully!' in 3 words.", model_id=model_id, timeout=15)
+            resp = client.execute(req)
+        finally:
+            if key != previous_key:
+                self.vault.set_api_key(provider, previous_key)
 
         if resp.is_success:
             QMessageBox.information(

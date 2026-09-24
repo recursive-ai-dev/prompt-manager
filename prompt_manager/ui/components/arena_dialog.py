@@ -33,6 +33,7 @@ from prompt_manager.integrations.llm_providers import (
     LLMResponse,
     get_model_info,
 )
+from prompt_manager.ui.components.thread_helpers import WorkerLifetime, track_worker
 
 
 class _ArenaWorker(QObject):
@@ -190,6 +191,7 @@ class ArenaDialog(QDialog):
         self._system_instruction = system_instruction
         self._worker_thread: Optional[QThread] = None
         self._worker: Optional[_ArenaWorker] = None
+        self._worker_holders: List[WorkerLifetime] = []
 
         self._init_ui()
 
@@ -271,10 +273,32 @@ class ArenaDialog(QDialog):
         self._system_instruction = system_instruction
         self.prompt_edit.setPlainText(prompt)
 
+    def _release_current_run(self, wait_ms: int) -> None:
+        """Stop the in-flight run and release thread/worker references safely.
+
+        If the thread is still running when the wait times out (a model
+        request is in progress), the worker is held until the thread has
+        truly finished so its C++ object is never destroyed under a live
+        thread.
+        """
+        thread = self._worker_thread
+        worker = self._worker
+        self._worker_thread = None
+        self._worker = None
+        if thread is None:
+            return
+        thread.quit()
+        if worker is None or thread.wait(wait_ms):
+            return  # terminated: dropping the references is safe now
+        track_worker(worker, thread, self._worker_holders)
+
     def run_arena(self):
         prompt_text = self.prompt_edit.toPlainText().strip()
         if not prompt_text:
             return
+
+        # Drop lifetimes of threads that have already finished
+        self._worker_holders = [h for h in self._worker_holders if not h.released]
 
         model_ids = [
             self.card1.get_selected_model_id(),
@@ -307,11 +331,7 @@ class ArenaDialog(QDialog):
     def cancel_arena(self):
         if self._worker:
             self._worker._is_cancelled = True
-        if self._worker_thread:
-            self._worker_thread.quit()
-            self._worker_thread.wait(300)
-        self._worker = None
-        self._worker_thread = None
+        self._release_current_run(300)
         self.stop_btn.hide()
         self.run_btn.show()
         self.summary_label.setText("Benchmark cancelled.")
@@ -352,8 +372,4 @@ class ArenaDialog(QDialog):
         self._cleanup_thread()
 
     def _cleanup_thread(self):
-        if self._worker_thread:
-            self._worker_thread.quit()
-            self._worker_thread.wait(200)
-        self._worker = None
-        self._worker_thread = None
+        self._release_current_run(200)

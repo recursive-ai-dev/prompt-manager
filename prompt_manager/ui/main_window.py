@@ -462,7 +462,6 @@ class MainWindow(QMainWindow):
         hud_alt.setShortcut(QKeySequence("Ctrl+Alt+P"))
         hud_alt.triggered.connect(self._show_quick_launcher)
         self.addAction(hud_alt)
-        self.addAction(search_f)
 
     # ── Theme handling ───────────────────────────────────────────────
     def _apply_theme(self, theme_id: str) -> None:
@@ -787,12 +786,21 @@ class MainWindow(QMainWindow):
 
     def _on_delete_folder(self, folder_id: str):
         self.repo.delete_folder(folder_id)
+        # If the deleted folder was the active filter, reset to "all" —
+        # otherwise the prompt list filters on a non-existent id and shows
+        # nothing until the user manually clicks "All Prompts".
+        if self._current_filter_type == "folder" and self._current_filter_id == folder_id:
+            self._current_filter_type = "all"
+            self._current_filter_id = None
         self._refresh_folders_and_tags()
         self._refresh_prompts_list()
         self.toast.show_message("Folder deleted")
 
     def _on_delete_tag(self, tag_id: str):
         self.repo.delete_tag(tag_id)
+        if self._current_filter_type == "tag" and self._current_filter_id == tag_id:
+            self._current_filter_type = "all"
+            self._current_filter_id = None
         self._refresh_folders_and_tags()
         self._refresh_prompts_list()
         self.toast.show_message("Tag deleted")

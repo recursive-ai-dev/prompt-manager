@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 APP_NAME = "prompt-manager"
 APP_DISPLAY_NAME = "Prompt Manager"
@@ -43,13 +44,18 @@ def ensure_directories() -> None:
 # ── Settings persistence (settings.json) ─────────────────────────────────
 
 def _read_settings() -> dict:
-    """Read settings.json, returning {} on missing/corrupt file."""
+    """Read settings.json, returning {} on missing/corrupt/non-dict file."""
     if not CONFIG_FILE_PATH.exists():
         return {}
     try:
-        return json.loads(CONFIG_FILE_PATH.read_text(encoding="utf-8"))
+        data = json.loads(CONFIG_FILE_PATH.read_text(encoding="utf-8"))
     except Exception:
         return {}
+    # A valid JSON file that is not an object (e.g. "[1,2]" or "5") would
+    # crash every consumer calling .get() on it — treat as corrupt.
+    if not isinstance(data, dict):
+        return {}
+    return data
 
 
 def _write_settings(data: dict) -> None:
@@ -84,10 +90,15 @@ def set_setting(key: str, value) -> None:
 
 # ── GitHub integration persistence ────────────────────────────────────
 
+def _as_dict(value: Any) -> dict:
+    """Coerce a stored settings value to a dict (corrupt blocks fall back to {})."""
+    return value if isinstance(value, dict) else {}
+
+
 def get_github_config() -> dict:
     """Return persisted GitHub config block (may be empty)."""
     data = _read_settings()
-    gh = data.get("github", {})
+    gh = _as_dict(data.get("github", {}))
     # Ensure defaults
     gh.setdefault("token", "")
     gh.setdefault("token_type", "")  # "pat" or "oauth"
@@ -106,7 +117,7 @@ def get_github_config() -> dict:
 def set_github_config(patch: dict) -> None:
     """Merge patch into github config block and persist."""
     data = _read_settings()
-    gh = data.get("github", {})
+    gh = _as_dict(data.get("github", {}))
     gh.update(patch)
     data["github"] = gh
     _write_settings(data)
@@ -115,7 +126,7 @@ def set_github_config(patch: dict) -> None:
 def clear_github_config() -> None:
     """Remove GitHub connection (token + repo) but keep branch/path defaults."""
     data = _read_settings()
-    gh = data.get("github", {})
+    gh = _as_dict(data.get("github", {}))
     for key in ["token", "token_type", "username", "avatar_url", "repo", "connected", "last_sync", "last_sync_sha"]:
         gh.pop(key, None)
     gh["connected"] = False
@@ -145,7 +156,7 @@ POLLINATIONS_MODELS = [
 def get_pollinations_config() -> dict:
     """Return persisted Pollinations configuration."""
     data = _read_settings()
-    pol = data.get("pollinations", {})
+    pol = _as_dict(data.get("pollinations", {}))
     pol.setdefault("model", DEFAULT_POLLINATIONS_MODEL)
     pol.setdefault("api_key", "")
     pol.setdefault("temperature", 0.7)
@@ -156,7 +167,7 @@ def get_pollinations_config() -> dict:
 def set_pollinations_config(patch: dict) -> None:
     """Merge patch into pollinations configuration and persist."""
     data = _read_settings()
-    pol = data.get("pollinations", {})
+    pol = _as_dict(data.get("pollinations", {}))
     pol.update(patch)
     data["pollinations"] = pol
     _write_settings(data)

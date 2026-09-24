@@ -352,6 +352,9 @@ class PromptRepository:
             )
 
     def get_template_by_name(self, name: str) -> Optional[PromptTemplate]:
+        name = (name or "").strip()
+        if not name:
+            return None
         with self.db.get_connection() as conn:
             cur = conn.execute(
                 """
@@ -359,7 +362,7 @@ class PromptRepository:
                        category, created_at, updated_at
                 FROM prompt_templates WHERE name = ?
                 """,
-                (name.strip(),),
+                (name,),
             )
             row = cur.fetchone()
             if not row:

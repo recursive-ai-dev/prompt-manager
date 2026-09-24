@@ -5,12 +5,13 @@ from __future__ import annotations
 import csv
 import io
 import json
+import math
 from pathlib import Path
-import re
 from typing import Any, Dict, List, Optional
 import uuid
 
 from prompt_manager.core.models import Prompt
+from prompt_manager.core.template_engine import VARIABLE_PATTERN
 
 
 def to_plain_text(prompt: Prompt, hydrated_content: str = "") -> str:
@@ -116,11 +117,21 @@ def _escape_triple_quotes(text: str) -> str:
     return text
 
 
+def _mustache_to_fstring(template: str) -> str:
+    """Convert canonical Mustache variables ({{name}} / {{name:default}} /
+    {{name|modifier}}) to f-string style {name} placeholders.
+
+    Uses the shared VARIABLE_PATTERN so the conversion stays in sync with
+    template_engine.extract_variables (e.g. hyphenated names).
+    """
+    return VARIABLE_PATTERN.sub(lambda m: "{" + m.group(1) + "}", template)
+
+
 def to_langchain_template(prompt: Prompt) -> str:
     """Generate ready-to-run LangChain Python code snippet."""
     # Convert Mustache {{var}} or {{var:default}} to LangChain {var}
-    clean_template = re.sub(r"\{\{([a-zA-Z0-9_]+)(?::[^|}]*)?(?:\|[^}]*)?\}\}", r"{\1}", prompt.template_content)
-    clean_system = re.sub(r"\{\{([a-zA-Z0-9_]+)(?::[^|}]*)?(?:\|[^}]*)?\}\}", r"{\1}", prompt.system_instruction)
+    clean_template = _mustache_to_fstring(prompt.template_content)
+    clean_system = _mustache_to_fstring(prompt.system_instruction)
 
     code = [
         "# LangChain Prompt Template",
@@ -148,7 +159,7 @@ def to_langchain_template(prompt: Prompt) -> str:
 
 def to_llamaindex_template(prompt: Prompt) -> str:
     """Generate ready-to-run LlamaIndex Python code snippet."""
-    clean_template = re.sub(r"\{\{([a-zA-Z0-9_]+)(?::[^|}]*)?(?:\|[^}]*)?\}\}", r"{\1}", prompt.template_content)
+    clean_template = _mustache_to_fstring(prompt.template_content)
 
     return f'''# LlamaIndex Prompt Template
 from llama_index.core import PromptTemplate
@@ -205,33 +216,39 @@ def to_csv_string(prompts: List[Prompt]) -> str:
 
 
 def _safe_float(val: Any, default: float = 0.7) -> float:
-    """Safely parse a float value with fallback to default."""
+    """Safely parse a float value with fallback to default (nan/inf fall back)."""
     if val is None:
         return default
-    if isinstance(val, (int, float)):
-        return float(val)
+    if isinstance(val, (int, float)) and not isinstance(val, bool):
+        parsed = float(val)
+        return parsed if math.isfinite(parsed) else default
     val_str = str(val).strip()
     if not val_str:
         return default
     try:
-        return float(val_str)
-    except (ValueError, TypeError):
+        parsed = float(val_str)
+    except (ValueError, TypeError, OverflowError):
         return default
+    return parsed if math.isfinite(parsed) else default
 
 
 def _safe_int(val: Any, default: int = 0) -> int:
-    """Safely parse an integer value with fallback to default."""
+    """Safely parse an integer value with fallback to default (nan/inf fall back)."""
     if val is None:
         return default
+    if isinstance(val, bool):
+        return int(val)
     if isinstance(val, int):
         return val
     val_str = str(val).strip()
     if not val_str:
         return default
     try:
-        return int(float(val_str))
-    except (ValueError, TypeError):
+        number = int(float(val_str))
+    except (ValueError, TypeError, OverflowError):
+        # OverflowError: int(float("1e400")) converts inf, which overflows
         return default
+    return number
 
 
 def from_csv_string(csv_text: str) -> List[Prompt]:

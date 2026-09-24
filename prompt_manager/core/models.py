@@ -143,7 +143,7 @@ class Folder:
                 self.sort_order = 0
             else:
                 self.sort_order = int(float(raw))  # type: ignore[arg-type]
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, OverflowError):
             self.sort_order = 0
         self.created_at = _ensure_ts(self.created_at)
 
@@ -211,7 +211,7 @@ class PromptRevision:
                 self.revision_number = 1
             else:
                 self.revision_number = int(float(raw))  # type: ignore[arg-type]
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, OverflowError):
             self.revision_number = 1
         if self.revision_number < 1:
             self.revision_number = 1
@@ -388,7 +388,8 @@ class Prompt:
             if isinstance(raw, str) and not raw:
                 return 0
             number = int(float(raw))  # type: ignore[arg-type]
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, OverflowError):
+            # OverflowError: int(float("1e400")) converts inf, which overflows
             return 0
         return max(0, number)
 

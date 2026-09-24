@@ -87,18 +87,34 @@ def export_library_to_json(repo: PromptRepository, filepath: Path) -> int:
     return len(prompts)
 
 
+def _iter_dicts(data: Any, key: str) -> List[Dict[str, Any]]:
+    """Yield dict entries from data[key]; skip non-list values and non-dict items.
+
+    Malformed backup files (wrong shapes) must never crash the import —
+    bad entries are skipped, good ones still import.
+    """
+    items = data.get(key, []) if isinstance(data, dict) else []
+    if not isinstance(items, list):
+        return []
+    return [item for item in items if isinstance(item, dict)]
+
+
 def import_library_from_json(repo: PromptRepository, filepath: Path) -> int:
     """Import prompts, folders, tags, and prompt_templates from JSON backup.
 
     Missing ids fall back to fresh UUIDs via model coercion (never KeyError);
     malformed numerics fall back (temperature->0.7, use_count/sort_order->0);
+    non-dict top level / malformed entries are skipped (never crash);
     orphan folder_id/template_id/parent_id are nullified by the repository
     (never crash). Revisions are intentionally not part of the format.
+    Raises ValueError for unreadable/invalid JSON files.
     """
     content = filepath.read_text(encoding="utf-8")
     data = json.loads(content)
+    if not isinstance(data, dict):
+        raise ValueError("Backup file must contain a JSON object")
 
-    for f_data in data.get("folders", []):
+    for f_data in _iter_dicts(data, "folders"):
         repo.save_folder(
             Folder(
                 id=f_data.get("id") or None,
@@ -110,7 +126,7 @@ def import_library_from_json(repo: PromptRepository, filepath: Path) -> int:
             )
         )
 
-    for t_data in data.get("tags", []):
+    for t_data in _iter_dicts(data, "tags"):
         repo.save_tag(
             Tag(
                 id=t_data.get("id") or None,
@@ -120,7 +136,7 @@ def import_library_from_json(repo: PromptRepository, filepath: Path) -> int:
         )
 
     # Import templates first (prompts may reference template_id)
-    for tmpl_data in data.get("templates", []):
+    for tmpl_data in _iter_dicts(data, "templates"):
         try:
             repo.save_template(
                 PromptTemplate(
@@ -138,7 +154,7 @@ def import_library_from_json(repo: PromptRepository, filepath: Path) -> int:
             continue
 
     imported_count = 0
-    for p_data in data.get("prompts", []):
+    for p_data in _iter_dicts(data, "prompts"):
         p = Prompt(
             id=p_data.get("id") or None,
             title=p_data.get("title", "Imported Prompt"),

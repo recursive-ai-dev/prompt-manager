@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
 )
 
 from prompt_manager.config import DEFAULT_TARGET_MODELS
-from prompt_manager.core.models import Folder, Prompt
+from prompt_manager.core.models import Folder, Prompt, normalize_tag_name
 from prompt_manager.core.template_engine import check_syntax_errors
 from prompt_manager.ui.components.highlighter import PromptSyntaxHighlighter
 
@@ -245,9 +245,18 @@ class PromptEditorPanel(QFrame):
         prompt.temperature = float(self.temp_spin.value())
         prompt.folder_id = self.folder_combo.currentData()
 
-        # Parse tags
-        raw_tags = self.tags_input.text().split(",")
-        prompt.tags = [t.strip().lstrip("#") for t in raw_tags if t.strip()]
+        # Parse tags via the model's canonical normalization
+        # (strip / lstrip("#") / lower / dedupe) so the in-memory model
+        # matches what the repository stores — direct assignment otherwise
+        # bypasses Prompt.__post_init__ and leaves raw, non-canonical names.
+        seen: set = set()
+        tags: List[str] = []
+        for raw in self.tags_input.text().split(","):
+            clean = normalize_tag_name(raw)
+            if clean and clean not in seen:
+                seen.add(clean)
+                tags.append(clean)
+        prompt.tags = tags
 
         prompt.system_instruction = self.system_edit.toPlainText().strip()
         prompt.template_content = self.template_edit.toPlainText()

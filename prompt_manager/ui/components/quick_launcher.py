@@ -198,6 +198,15 @@ class QuickLauncherHUD(QDialog):
             self._active_prompt = None
             self.title_label.setText("No matching prompts found")
             self.preview_edit.clear()
+            # Clear the previous prompt's variable inputs so stale fields
+            # are not left on screen next to the "no match" state.
+            self._variable_values.clear()
+            self._var_inputs.clear()
+            while self.var_layout.count():
+                child = self.var_layout.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+            self.var_container.hide()
 
     def _on_search_text_changed(self):
         self._filter_and_render()

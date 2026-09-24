@@ -347,8 +347,12 @@ class TemplateManagerDialog(QDialog):
         category = self.category_filter.currentData()
         templates = self.repo.list_templates(category=category, search_query=query)
 
-        # Preserve selection
+        # Preserve selection.  Signals are blocked during rebuild so the
+        # transient "selection cleared" event does not reset the editor /
+        # _current_id — only the final re-selection is delivered, and the
+        # _on_selection_changed guard then keeps in-progress edits intact.
         prev_id = self._current_id
+        self.list_widget.blockSignals(True)
         self.list_widget.clear()
         target_item = None
         for tmpl in templates:
@@ -361,6 +365,8 @@ class TemplateManagerDialog(QDialog):
             self.list_widget.addItem(item)
             if tmpl.id == prev_id:
                 target_item = item
+
+        self.list_widget.blockSignals(False)
 
         if target_item:
             self.list_widget.setCurrentItem(target_item)
@@ -382,6 +388,11 @@ class TemplateManagerDialog(QDialog):
             self.use_btn.setEnabled(False)
             return
         tid = current.data(Qt.ItemDataRole.UserRole)
+        # Re-selecting the already-open template (e.g. after a list refresh
+        # from search/filter keystrokes) must NOT reload the editor — doing
+        # so silently discards the user's unsaved in-progress edits.
+        if tid == self._current_id:
+            return
         tmpl = self.repo.get_template_by_id(tid)
         if tmpl:
             self._current_id = tmpl.id

@@ -109,10 +109,26 @@ class KeyVault:
         temp_path = self.vault_path.with_suffix(".tmp")
         fd = os.open(str(temp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         try:
-            with open(fd, "wb") as f:
+            try:
+                f = os.fdopen(fd, "wb")
+            except Exception:
+                # fdopen failed; ensure the raw fd is not leaked (ignore
+                # EBADF in case the implementation already released it).
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+                raise
+            with f:
                 f.write(encrypted)
+                f.flush()
+                os.fsync(f.fileno())
         except Exception:
-            os.close(fd)
+            try:
+                if temp_path.exists():
+                    temp_path.unlink()
+            except OSError:
+                pass
             raise
         temp_path.replace(self.vault_path)
         try:
