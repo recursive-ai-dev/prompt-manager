@@ -35,16 +35,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# OS-native credential storage (Linux Secret Service / macOS Keychain /
-# Windows Credential Manager). Optional: without it the app transparently
-# uses an encrypted local vault fallback (see prompt_manager/core/keychain.py).
+# Compatibility extra for OS-native credential storage; keyring is also a
+# required application dependency. Credentials have no local disk fallback.
 keyring = ["keyring>=24.0"]
 # Background removal for the theme-accent asset generator (dev/tooling only).
 assets = ["Pillow>=10.0"]
 # Standalone binary packaging.
 build = ["pyinstaller>=6.0"]
 # Test + development tooling.
-dev = ["pytest>=7.0"]
+dev = ["pytest>=8", "ruff>=0.11", "mypy>=1.15"]
 
 [project.scripts]
 prompt-manager = "prompt_manager.app:main"
@@ -59,9 +58,6 @@ testpaths = ["tests"]
 
 [tool.setuptools.dynamic]
 version = {attr = "prompt_manager.__version__"}
-
-[project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.11", "mypy>=1.15"]
 
 [tool.ruff]
 target-version = "py310"
