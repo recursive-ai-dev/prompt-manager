@@ -1,6 +1,6 @@
 # Prompt Manager Studio
 
-A sleek, blazing-fast, and local-first AI Prompt IDE & Workspace for developers and prompt engineers. Store, template, organize, benchmark, and deploy AI prompts across OpenAI, Anthropic, Google Gemini, and Local Ollama with zero lock-in and offline cryptographic licensing.
+A sleek, blazing-fast, and local-first AI Prompt IDE & Workspace for developers and prompt engineers. Store, template, organize, benchmark, and deploy AI prompts across OpenAI, Anthropic, Google Gemini, and Local Ollama with zero lock-in and offline feature unlocks.
 
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-indigo)
@@ -15,8 +15,8 @@ A sleek, blazing-fast, and local-first AI Prompt IDE & Workspace for developers 
 - **⚡ Lightning-Fast & Lightweight**: Native Qt6 desktop application with sub-100ms cold startup and minimal (~40MB) memory footprint.
 - **⚡ Multi-Model Evaluation Arena (`Ctrl+Shift+A`)**: Benchmark prompts against up to 3 LLMs side-by-side simultaneously (OpenAI GPT-4o, Claude 3.7 Sonnet, Gemini 2.5 Pro, and Local Ollama models) with latency, token consumption, and dollar cost telemetry ($ / 1k tokens).
 - **🚀 Global Spotlight/Raycast Quick-Launcher HUD (`Ctrl+Space`)**: Floating instant-search command palette. Fill dynamic template variables inline and dispatch hydrated prompts directly to your system clipboard without breaking workflow context.
-- **🔑 Zero-Trust Keyring Vault (BYOK)**: Secure OS-keychain backed API Key Management (Linux Secret Service / Apple Keychain / Windows Credential Manager) with encrypted local fallback.
-- **✨ Offline-First Cryptographic Licensing**: 100% offline HMAC-SHA256 digital license verification supporting Lifetime Pro licenses, Team seats, and automatic 14-day Pro trials.
+- **🔑 OS Keyring Vault (BYOK)**: API keys and GitHub tokens are saved only in a supported OS keyring (Linux Secret Service/KWallet, Apple Keychain, or Windows Credential Manager). Saving credentials requires an available, unlocked keyring; there is no disk fallback.
+- **✨ Offline Feature Unlocks**: Local unlock codes and an automatic 14-day Pro trial. The bundled HMAC key and editable trial settings provide convenience feature flags, not proof of purchase or issuer authentication; anyone can generate a code.
 - **🔍 Full-Text Search (FTS5)**: Instant search indexing across titles, templates, descriptions, and system instructions.
 - **🏷️ Multi-dimensional Organization**: Organize by nested folders, colored tags, target AI models, and starred favorites.
 - **🧩 Dynamic Variable Engine**: Mustache-style templating (`{{var}}`, `{{var:default}}`, `{{var|multiline}}`, `{{var|options:a,b,c}}`) with an auto-generated live form.
@@ -161,8 +161,8 @@ prompt-manager/
 │   ├── core/
 │   │   ├── models.py              # Data models (Prompt, Folder, Tag, Revision, Template)
 │   │   ├── template_engine.py     # Mustache variable extractor & hydration
-│   │   ├── keychain.py            # OS Keyring + encrypted vault BYOK credential storage
-│   │   ├── licensing.py           # Offline HMAC-SHA256 license verification & Pro trial
+│   │   ├── keychain.py            # OS keyring BYOK storage + legacy vault migration
+│   │   ├── licensing.py           # Local feature unlock codes & Pro trial
 │   │   ├── arena.py               # Concurrent multi-model evaluation engine
 │   │   ├── exporter.py            # OpenAI, Anthropic, LangChain, LlamaIndex, CSV formatters
 │   │   ├── token_counter.py       # BPE token counter & text metrics
@@ -203,3 +203,16 @@ prompt-manager/
 ├── pyproject.toml
 └── README.md
 ```
+
+### Credential storage migration
+
+On first access, old `vault.dat` entries and GitHub/Pollinations secrets in
+`settings.json` are moved to the OS keyring. The old vault is deleted only after
+all entries have been verified in the keyring; existing keyring values take
+precedence. A failed migration preserves the original file and reports an error.
+Migration does not remove secrets from historical backups or synced copies.
+
+The keyring package is installed with the app. Linux also needs a running Secret
+Service or KWallet service (KWallet requires the system `dbus-python` binding).
+See the [keyring documentation](https://keyring.readthedocs.io/en/stable/) for
+platform setup. Explicit in-memory vaults are used for connection tests only.

@@ -33,7 +33,7 @@ class RevisionHistoryDialog(QDialog):
 
         title = QLabel("Prompt Revision Snapshots")
         title.setStyleSheet("font-size: 15px; font-weight: 700;")
-        title.setToolTip("Chronological immutable snapshots of this prompt")
+        title.setToolTip("Saved versions, newest first. Deleting the prompt also deletes its history.")
         main_layout.addWidget(title)
 
         content_layout = QHBoxLayout()

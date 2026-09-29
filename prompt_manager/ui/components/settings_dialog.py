@@ -40,7 +40,7 @@ from prompt_manager.config import (
     set_setting,
     set_theme_id,
 )
-from prompt_manager.core.keychain import get_key_vault
+from prompt_manager.core.keychain import CredentialStoreError, KeyVault, get_key_vault
 from prompt_manager.core.licensing import (
     ALL_PRO_FEATURES,
     generate_license_key,
@@ -140,7 +140,7 @@ class SettingsDialog(QDialog):
         prov_layout = QVBoxLayout(providers_tab)
         prov_layout.setSpacing(10)
 
-        prov_header = QLabel("Configure your API keys for direct execution in the Multi-Model Arena.\nKeys are stored in your secure OS keyring / encrypted local vault.")
+        prov_header = QLabel("Configure your API keys for direct execution in the Multi-Model Arena.\nSaving keys requires an unlocked OS keyring.")
         prov_header.setStyleSheet("font-size: 11px; color: #94a3b8;")
         prov_layout.addWidget(prov_header)
 
@@ -255,7 +255,7 @@ class SettingsDialog(QDialog):
         perks_text = QLabel(
             "✓ Multi-Model Evaluation Arena (Side-by-side LLM benchmark)\n"
             "✓ Global Spotlight/Raycast Quick Launcher HUD\n"
-            "✓ Zero-Trust Local Storage & OS Keyring API Key Vault\n"
+            "✓ Local Storage & OS Keyring API Key Vault\n"
             "✓ Unlimited Prompts, Revisions & Fast FTS5 Search\n"
             "✓ All 13 Handcrafted Themes & Export Formats"
         )
@@ -335,9 +335,10 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(self, "API Key Missing", f"Please enter a key for {provider.title()} first.")
             return
 
-        # Save temporarily in vault to test
-        self.vault.set_api_key(provider, key)
-        client = LLMClient(self.vault)
+        # Connection tests use only an ephemeral in-memory credential.
+        test_vault = KeyVault(use_keyring=False)
+        test_vault.set_api_key(provider, key)
+        client = LLMClient(test_vault)
         model_map = {
             "openai": "openai:gpt-4o-mini",
             "anthropic": "anthropic:claude-3-5-haiku-20241022",
@@ -405,13 +406,18 @@ class SettingsDialog(QDialog):
             self._refresh_license_display()
 
     def _save_and_close(self):
-        # Persist API keys
-        self.vault.set_api_key("openai", self.openai_key_edit.text().strip())
-        self.vault.set_api_key("anthropic", self.anthropic_key_edit.text().strip())
-        self.vault.set_api_key("gemini", self.gemini_key_edit.text().strip())
-        self.vault.set_api_key("openrouter", self.openrouter_key_edit.text().strip())
+        try:
+            # Persist API keys
+            self.vault.set_api_key("openai", self.openai_key_edit.text().strip())
+            self.vault.set_api_key("anthropic", self.anthropic_key_edit.text().strip())
+            self.vault.set_api_key("gemini", self.gemini_key_edit.text().strip())
+            self.vault.set_api_key("openrouter", self.openrouter_key_edit.text().strip())
 
-        ollama_url = self.ollama_url_edit.text().strip() or "http://localhost:11434"
-        self.vault.set_provider_config("ollama", {"base_url": ollama_url})
+            ollama_url = self.ollama_url_edit.text().strip() or "http://localhost:11434"
+            self.vault.set_provider_config("ollama", {"base_url": ollama_url})
+
+        except CredentialStoreError as exc:
+            QMessageBox.warning(self, "Credentials not saved", str(exc))
+            return
 
         self.accept()

@@ -1,7 +1,8 @@
-"""Cryptographic offline-first licensing and Pro tier manager for Prompt Manager.
+"""Local feature unlocks and Pro trial settings for Prompt Manager.
 
-Validates digital license keys completely offline using HMAC-SHA256 signatures,
-supports 14-day automatic local Pro trials, and manages feature access control.
+The bundled HMAC key is public: anyone can generate an accepted unlock code.
+These codes and editable trial dates are convenience flags, not proof of purchase
+or issuer authentication. Existing code formats are retained for compatibility.
 """
 
 from __future__ import annotations
@@ -16,8 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from prompt_manager.config import get_setting, set_setting
 
-# Digital signature secret root for Prompt Manager Studio offline licensing
-# In production build, this can be combined with build-time hashes
+# Public compatibility key. This cannot authenticate a license issuer.
 _LICENSE_HMAC_SECRET = b"prompt-manager-studio-pro-v2-licensing-master-key-2026"
 
 FEATURE_ARENA = "arena"
@@ -76,7 +76,7 @@ def generate_license_key(
     features: Optional[List[str]] = None,
     license_id: Optional[str] = None,
 ) -> str:
-    """Generate a signed cryptographic license key string.
+    """Generate a local feature unlock code (not an authenticated license).
 
     Format: PM-<TIER>-<BASE64_PAYLOAD>.<SIGNATURE>
     """
@@ -106,7 +106,7 @@ def generate_license_key(
 
 
 def verify_license_key(key: str) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
-    """Cryptographically verify a license key offline.
+    """Check a local unlock code for format, checksum, and expiry.
 
     Returns:
         (is_valid, error_reason_or_ok, payload_dict)

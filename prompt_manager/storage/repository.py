@@ -140,13 +140,22 @@ class PromptRepository:
         """
         now = datetime.now().isoformat()
         with self.db.get_connection() as conn:
+            # Hold the write transaction across the snapshot and update.
+            conn.execute("BEGIN IMMEDIATE")
             prompt.folder_id = self._nullify_missing_folder(conn, prompt.folder_id)
             prompt.template_id = self._nullify_missing_template(conn, prompt.template_id)
             # Check if prompt exists
-            cur = conn.execute("SELECT id FROM prompts WHERE id = ?", (prompt.id,))
-            exists = cur.fetchone() is not None
+            cur = conn.execute("SELECT * FROM prompts WHERE id = ?", (prompt.id,))
+            previous = cur.fetchone()
+            exists = previous is not None
 
             if exists:
+                if create_revision:
+                    self._record_revision(conn, Prompt(
+                        id=previous["id"], title=previous["title"],
+                        template_content=previous["template_content"],
+                        system_instruction=previous["system_instruction"],
+                    ))
                 conn.execute(
                     """
                     UPDATE prompts SET
@@ -218,9 +227,6 @@ class PromptRepository:
                         "INSERT OR IGNORE INTO prompt_tags (prompt_id, tag_id) VALUES (?, ?)",
                         (prompt.id, tag_row[0]),
                     )
-
-            if create_revision and exists:
-                self._record_revision(conn, prompt)
 
         return prompt
 

@@ -480,7 +480,7 @@ class GithubDialog(QDialog):
             if gh.get("token"):
                 self.conn_detail_label.setText("Token saved but not verified — click Verify & Save Token")
             else:
-                self.conn_detail_label.setText("Add a PAT or use OAuth Device Flow. Your token is stored locally in settings.json")
+                self.conn_detail_label.setText("Add a PAT or use OAuth Device Flow. Saving your token requires an unlocked OS keyring")
             self.repo_current_label.setText("⚪ <b>Not connected</b> — go to <b>Connection</b> tab to authenticate first. You can still type <code>owner/repo</code> manually.")
             self.repo_current_label.setStyleSheet("padding: 8px; border-radius: 6px; background: #422006; color: #fde68a; border: 1px solid #92400e;")
 
@@ -554,7 +554,11 @@ class GithubDialog(QDialog):
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
-        clear_github_config()
+        try:
+            clear_github_config()
+        except RuntimeError as exc:
+            QMessageBox.warning(self, "Could not disconnect", str(exc))
+            return
         self.pat_input.clear()
         self.repo_combo.clear()
         self._update_connection_ui()

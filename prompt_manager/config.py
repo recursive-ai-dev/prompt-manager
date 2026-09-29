@@ -2,11 +2,15 @@
 
 import json
 import os
+import tempfile
 from pathlib import Path
+
+from prompt_manager import __version__
 
 APP_NAME = "prompt-manager"
 APP_DISPLAY_NAME = "Prompt Manager"
-APP_VERSION = "0.2.0"
+
+APP_VERSION = __version__
 
 # XDG Base Directory specification compliance
 XDG_DATA_HOME = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
@@ -42,22 +46,51 @@ def ensure_directories() -> None:
 
 # ── Settings persistence (settings.json) ─────────────────────────────────
 
+def _migrate_settings_credentials(data: dict) -> bool:
+    """Move legacy secrets before rewriting settings; failed saves retain the file."""
+    from prompt_manager.core.keychain import get_key_vault
+
+    changed = False
+    for section, field, provider in (
+        ("github", "token", "github"),
+        ("pollinations", "api_key", "pollinations"),
+    ):
+        block = data.get(section, {})
+        if field in block:
+            secret = block[field]
+            if secret and not get_key_vault().get_api_key(provider):
+                get_key_vault().set_api_key(provider, secret)
+            block.pop(field)
+            changed = True
+    return changed
+
+
 def _read_settings() -> dict:
-    """Read settings.json, returning {} on missing/corrupt file."""
-    if not CONFIG_FILE_PATH.exists():
-        return {}
+    """Read settings and migrate legacy credentials into the OS keyring."""
     try:
-        return json.loads(CONFIG_FILE_PATH.read_text(encoding="utf-8"))
-    except Exception:
+        data = json.loads(CONFIG_FILE_PATH.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError):
         return {}
+    if not isinstance(data, dict):
+        return {}
+    if _migrate_settings_credentials(data):
+        _write_settings(data)
+    return data
 
 
 def _write_settings(data: dict) -> None:
-    """Write settings dict atomically."""
+    """Write settings atomically with private permissions, excluding credentials."""
+    _migrate_settings_credentials(data)
     ensure_directories()
-    temp_path = CONFIG_FILE_PATH.with_suffix(".tmp")
-    temp_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    temp_path.replace(CONFIG_FILE_PATH)
+    CONFIG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(prefix="settings-", suffix=".tmp", dir=CONFIG_FILE_PATH.parent)
+    temp_path = Path(name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(data, stream, indent=2)
+        temp_path.replace(CONFIG_FILE_PATH)
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 def get_theme_id() -> str:
@@ -89,7 +122,8 @@ def get_github_config() -> dict:
     data = _read_settings()
     gh = data.get("github", {})
     # Ensure defaults
-    gh.setdefault("token", "")
+    from prompt_manager.core.keychain import get_key_vault
+    gh["token"] = get_key_vault().get_api_key("github")
     gh.setdefault("token_type", "")  # "pat" or "oauth"
     gh.setdefault("username", "")
     gh.setdefault("avatar_url", "")
@@ -107,6 +141,10 @@ def set_github_config(patch: dict) -> None:
     """Merge patch into github config block and persist."""
     data = _read_settings()
     gh = data.get("github", {})
+    from prompt_manager.core.keychain import get_key_vault
+    patch = dict(patch)
+    if "token" in patch:
+        get_key_vault().set_api_key("github", patch.pop("token"))
     gh.update(patch)
     data["github"] = gh
     _write_settings(data)
@@ -115,6 +153,8 @@ def set_github_config(patch: dict) -> None:
 def clear_github_config() -> None:
     """Remove GitHub connection (token + repo) but keep branch/path defaults."""
     data = _read_settings()
+    from prompt_manager.core.keychain import get_key_vault
+    get_key_vault().delete_api_key("github")
     gh = data.get("github", {})
     for key in ["token", "token_type", "username", "avatar_url", "repo", "connected", "last_sync", "last_sync_sha"]:
         gh.pop(key, None)
@@ -147,7 +187,8 @@ def get_pollinations_config() -> dict:
     data = _read_settings()
     pol = data.get("pollinations", {})
     pol.setdefault("model", DEFAULT_POLLINATIONS_MODEL)
-    pol.setdefault("api_key", "")
+    from prompt_manager.core.keychain import get_key_vault
+    pol["api_key"] = get_key_vault().get_api_key("pollinations")
     pol.setdefault("temperature", 0.7)
     pol.setdefault("timeout", 45)
     return pol
@@ -157,6 +198,10 @@ def set_pollinations_config(patch: dict) -> None:
     """Merge patch into pollinations configuration and persist."""
     data = _read_settings()
     pol = data.get("pollinations", {})
+    from prompt_manager.core.keychain import get_key_vault
+    patch = dict(patch)
+    if "api_key" in patch:
+        get_key_vault().set_api_key("pollinations", patch.pop("api_key"))
     pol.update(patch)
     data["pollinations"] = pol
     _write_settings(data)

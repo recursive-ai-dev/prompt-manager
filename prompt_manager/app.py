@@ -15,7 +15,7 @@ from prompt_manager.config import APP_DISPLAY_NAME, APP_NAME, APP_VERSION, ensur
 # work on servers and CI runners that have no GUI/OpenGL libraries installed.
 
 
-def main():
+def _main():
     """Start the Prompt Manager Qt desktop application."""
     # Ensure standard desktop integration under Wayland and X11
     if "QT_QPA_PLATFORM" not in os.environ:
@@ -112,7 +112,7 @@ def main():
         nargs="?",
         const="Developer",
         metavar="NAME",
-        help="Generate a signed Pro license key for evaluation/testing (optional: name)",
+        help="Generate a local Pro feature unlock code (optional: name)",
     )
     parser.add_argument(
         "--run-ai",
@@ -214,7 +214,7 @@ def main():
         from prompt_manager.config import get_github_config
 
         gh = get_github_config()
-        print(json.dumps(gh, indent=2))
+        print(json.dumps({**gh, "token": "[REDACTED]" if gh.get("token") else ""}, indent=2))
         if not gh.get("token"):
             print("\nNot connected. Use the GUI: GitHub → Connect / Manage")
         sys.exit(0)
@@ -267,7 +267,11 @@ def main():
         raw_input = args.run_ai
         # Check if file path
         p = Path(raw_input)
-        if p.exists() and p.is_file():
+        try:
+            is_file = p.is_file()
+        except (OSError, ValueError):
+            is_file = False
+        if is_file:
             prompt_content = p.read_text(encoding="utf-8")
         else:
             prompt_content = raw_input
@@ -345,6 +349,21 @@ def main():
 
     window.show()
     sys.exit(app.exec())
+
+
+def main():
+    from prompt_manager.core.keychain import CredentialStoreError
+
+    try:
+        _main()
+    except CredentialStoreError as exc:
+        print(f"Credential storage error: {exc}", file=sys.stderr)
+        # A startup migration may fail after Qt has been initialized.
+        if "PyQt6.QtWidgets" in sys.modules:
+            from PyQt6.QtWidgets import QApplication, QMessageBox
+            if QApplication.instance() is not None:
+                QMessageBox.critical(None, "Credential storage error", str(exc))
+        sys.exit(1)
 
 
 if __name__ == "__main__":
