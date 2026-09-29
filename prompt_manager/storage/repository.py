@@ -1,5 +1,6 @@
 """Repository abstraction for Prompt Manager persistence operations."""
 
+from contextlib import closing
 from datetime import datetime
 import re
 import sqlite3
@@ -17,7 +18,7 @@ class PromptRepository:
         self.db = db
 
     def get_prompt_by_id(self, prompt_id: str) -> Optional[Prompt]:
-        with self.db.get_connection() as conn:
+        with closing(self.db.get_connection()) as conn, conn:
             cur = conn.execute(
                 """
                 SELECT id, title, description, folder_id, template_id, template_content,
@@ -58,7 +59,7 @@ class PromptRepository:
         template_id: Optional[str] = None,
     ) -> List[Prompt]:
         """Fetch prompts filtered by folder, tag, favorite, template, or FTS query."""
-        with self.db.get_connection() as conn:
+        with closing(self.db.get_connection()) as conn, conn:
             params = []
             conditions = []
 
@@ -139,7 +140,7 @@ class PromptRepository:
         model (names); mapping names <-> ids is resolved here.
         """
         now = datetime.now().isoformat()
-        with self.db.get_connection() as conn:
+        with closing(self.db.get_connection()) as conn, conn:
             # Hold the write transaction across the snapshot and update.
             conn.execute("BEGIN IMMEDIATE")
             prompt.folder_id = self._nullify_missing_folder(conn, prompt.folder_id)
@@ -231,12 +232,12 @@ class PromptRepository:
         return prompt
 
     def delete_prompt(self, prompt_id: str) -> bool:
-        with self.db.get_connection() as conn:
+        with closing(self.db.get_connection()) as conn, conn:
             cur = conn.execute("DELETE FROM prompts WHERE id = ?", (prompt_id,))
             return cur.rowcount > 0
 
     def toggle_favorite(self, prompt_id: str) -> bool:
-        with self.db.get_connection() as conn:
+        with closing(self.db.get_connection()) as conn, conn:
             cur = conn.execute(
                 "SELECT is_favorite FROM prompts WHERE id = ?", (prompt_id,)
             )
@@ -250,7 +251,7 @@ class PromptRepository:
             return bool(new_fav)
 
     def increment_use_count(self, prompt_id: str) -> None:
-        with self.db.get_connection() as conn:
+        with closing(self.db.get_connection()) as conn, conn:
             conn.execute(
                 "UPDATE prompts SET use_count = use_count + 1 WHERE id = ?",
                 (prompt_id,),
@@ -259,7 +260,7 @@ class PromptRepository:
     # ------------------ Folders ------------------
 
     def list_folders(self) -> List[Folder]:
-        with self.db.get_connection() as conn:
+        with closing(self.db.get_connection()) as conn, conn:
             cur = conn.execute(
                 "SELECT id, name, parent_id, icon, sort_order, created_at FROM folders ORDER BY sort_order, name ASC"
             )
@@ -277,7 +278,7 @@ class PromptRepository:
 
     def save_folder(self, folder: Folder) -> Folder:
         """Create or update a folder; orphan parent_id nullified, never crash."""
-        with self.db.get_connection() as conn:
+        with closing(self.db.get_connection()) as conn, conn:
             folder.parent_id = self._nullify_missing_parent(conn, folder)
             conn.execute(
                 """
@@ -301,14 +302,14 @@ class PromptRepository:
         return folder
 
     def delete_folder(self, folder_id: str) -> bool:
-        with self.db.get_connection() as conn:
+        with closing(self.db.get_connection()) as conn, conn:
             cur = conn.execute("DELETE FROM folders WHERE id = ?", (folder_id,))
             return cur.rowcount > 0
 
     # ------------------ Tags ------------------
 
     def list_tags(self) -> List[Tag]:
-        with self.db.get_connection() as conn:
+        with closing(self.db.get_connection()) as conn, conn:
             cur = conn.execute("SELECT id, name, color FROM tags ORDER BY name ASC")
             return [
                 Tag(id=row["id"], name=row["name"], color=row["color"])
@@ -316,7 +317,7 @@ class PromptRepository:
             ]
 
     def save_tag(self, tag: Tag) -> Tag:
-        with self.db.get_connection() as conn:
+        with closing(self.db.get_connection()) as conn, conn:
             conn.execute(
                 """
                 INSERT INTO tags (id, name, color)
@@ -328,14 +329,14 @@ class PromptRepository:
         return tag
 
     def delete_tag(self, tag_id: str) -> bool:
-        with self.db.get_connection() as conn:
+        with closing(self.db.get_connection()) as conn, conn:
             cur = conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
             return cur.rowcount > 0
 
     # ------------------ Prompt Templates ------------------
 
     def get_template_by_id(self, template_id: str) -> Optional[PromptTemplate]:
-        with self.db.get_connection() as conn:
+        with closing(self.db.get_connection()) as conn, conn:
             cur = conn.execute(
                 """
                 SELECT id, name, description, content, system_instruction,
@@ -359,7 +360,7 @@ class PromptRepository:
             )
 
     def get_template_by_name(self, name: str) -> Optional[PromptTemplate]:
-        with self.db.get_connection() as conn:
+        with closing(self.db.get_connection()) as conn, conn:
             cur = conn.execute(
                 """
                 SELECT id, name, description, content, system_instruction,
@@ -388,7 +389,7 @@ class PromptRepository:
         search_query: Optional[str] = None,
     ) -> List[PromptTemplate]:
         """List templates, optionally filtered by category or FTS search."""
-        with self.db.get_connection() as conn:
+        with closing(self.db.get_connection()) as conn, conn:
             params: List[str] = []
             conditions: List[str] = []
 
@@ -442,7 +443,7 @@ class PromptRepository:
             raise ValueError("Template content must not be empty")
         template.category = (template.category or "general").strip().lower() or "general"
 
-        with self.db.get_connection() as conn:
+        with closing(self.db.get_connection()) as conn, conn:
             # Check unique name conflict
             cur = conn.execute(
                 "SELECT id FROM prompt_templates WHERE name = ? AND id != ?",
@@ -498,7 +499,7 @@ class PromptRepository:
 
     def delete_template(self, template_id: str) -> bool:
         """Delete a template. Prompts referencing it will have template_id set to NULL via FK."""
-        with self.db.get_connection() as conn:
+        with closing(self.db.get_connection()) as conn, conn:
             cur = conn.execute("DELETE FROM prompt_templates WHERE id = ?", (template_id,))
             return cur.rowcount > 0
 
@@ -528,7 +529,7 @@ class PromptRepository:
     # ------------------ Revisions ------------------
 
     def get_revisions(self, prompt_id: str) -> List[PromptRevision]:
-        with self.db.get_connection() as conn:
+        with closing(self.db.get_connection()) as conn, conn:
             cur = conn.execute(
                 """
                 SELECT id, prompt_id, revision_number, title, template_content,

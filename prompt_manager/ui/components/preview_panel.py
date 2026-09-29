@@ -29,6 +29,7 @@ from prompt_manager.config import (
 )
 from prompt_manager.core.token_counter import calculate_metrics
 from prompt_manager.integrations.pollinations_client import PollinationsClient, PollinationsError
+from prompt_manager.ui.worker_thread import WorkerThread
 
 
 class _PollinationsWorker(QObject):
@@ -60,8 +61,8 @@ class _PollinationsWorker(QObject):
 
     def run(self):
         start_time = time.time()
-        client = PollinationsClient(api_key=self.api_key, timeout=self.timeout)
         try:
+            client = PollinationsClient(api_key=self.api_key, timeout=self.timeout)
             result = client.generate(
                 prompt=self.prompt,
                 system_instruction=self.system_instruction,
@@ -273,7 +274,6 @@ class PreviewPanel(QFrame):
         # Clean previous worker if running
         self.cancel_pollinations(silent=True)
 
-        self._poll_thread = QThread(self)
         self._poll_worker = _PollinationsWorker(
             prompt=prompt_text,
             system_instruction=self._system_instruction,
@@ -282,8 +282,9 @@ class PreviewPanel(QFrame):
             api_key=api_key,
             timeout=timeout,
         )
-        self._poll_worker.moveToThread(self._poll_thread)
-        self._poll_thread.started.connect(self._poll_worker.run)
+        self._poll_thread = WorkerThread(
+            self._poll_worker, self._poll_worker.run, self._poll_worker.cancel
+        )
         self._poll_worker.finished.connect(self._on_ai_finished)
         self._poll_worker.error.connect(self._on_ai_error)
         self._poll_thread.start()
@@ -291,9 +292,6 @@ class PreviewPanel(QFrame):
     def cancel_pollinations(self, silent: bool = False):
         if self._poll_worker:
             self._poll_worker.cancel()
-        if self._poll_thread:
-            self._poll_thread.quit()
-            self._poll_thread.wait(500)
         self._poll_worker = None
         self._poll_thread = None
         if not silent:
@@ -303,6 +301,8 @@ class PreviewPanel(QFrame):
             self.run_ai_btn.show()
 
     def _on_ai_finished(self, response: str, elapsed: float):
+        if self.sender() is not self._poll_worker or self._poll_worker is None:
+            return
         self.ai_progress.hide()
         self.cancel_ai_btn.hide()
         self.run_ai_btn.show()
@@ -314,6 +314,8 @@ class PreviewPanel(QFrame):
         self._clean_thread()
 
     def _on_ai_error(self, err_msg: str):
+        if self.sender() is not self._poll_worker or self._poll_worker is None:
+            return
         self.ai_progress.hide()
         self.cancel_ai_btn.hide()
         self.run_ai_btn.show()
@@ -322,9 +324,6 @@ class PreviewPanel(QFrame):
         self._clean_thread()
 
     def _clean_thread(self):
-        if self._poll_thread:
-            self._poll_thread.quit()
-            self._poll_thread.wait(200)
         self._poll_worker = None
         self._poll_thread = None
 

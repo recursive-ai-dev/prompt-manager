@@ -23,10 +23,7 @@ def export_library_to_json(repo: PromptRepository, filepath: Path) -> int:
     folders = repo.list_folders()
     tags = repo.list_tags()
     prompts = repo.list_prompts()
-    try:
-        templates = repo.list_templates()
-    except Exception:
-        templates = []
+    templates = repo.list_templates()
 
     data: Dict[str, Any] = {
         "version": "1.2",
@@ -98,17 +95,26 @@ def import_library_from_json(repo: PromptRepository, filepath: Path) -> int:
     content = filepath.read_text(encoding="utf-8")
     data = json.loads(content)
 
-    for f_data in data.get("folders", []):
-        repo.save_folder(
-            Folder(
-                id=f_data.get("id") or None,
-                name=f_data.get("name", ""),
-                parent_id=f_data.get("parent_id"),
-                icon=f_data.get("icon", "folder"),
-                sort_order=_safe_int(f_data.get("sort_order"), default=0),
-                created_at=f_data.get("created_at", ""),
-            )
+    folders = [
+        Folder(
+            id=f_data.get("id") or None,
+            name=f_data.get("name", ""),
+            parent_id=f_data.get("parent_id"),
+            icon=f_data.get("icon", "folder"),
+            sort_order=_safe_int(f_data.get("sort_order"), default=0),
+            created_at=f_data.get("created_at", ""),
         )
+        for f_data in data.get("folders", [])
+    ]
+    # Backups are sorted by name, so a child's parent may appear later.
+    # Keep the original links while the repository nullifies missing parents.
+    parent_ids = [folder.parent_id for folder in folders]
+    for folder in folders:
+        repo.save_folder(folder)
+    for folder, parent_id in zip(folders, parent_ids):
+        if parent_id != folder.parent_id:
+            folder.parent_id = parent_id
+            repo.save_folder(folder)
 
     for t_data in data.get("tags", []):
         repo.save_tag(
@@ -121,21 +127,18 @@ def import_library_from_json(repo: PromptRepository, filepath: Path) -> int:
 
     # Import templates first (prompts may reference template_id)
     for tmpl_data in data.get("templates", []):
-        try:
-            repo.save_template(
-                PromptTemplate(
-                    id=tmpl_data.get("id") or None,
-                    name=tmpl_data.get("name", "Untitled Template"),
-                    description=tmpl_data.get("description", ""),
-                    content=tmpl_data.get("content", ""),
-                    system_instruction=tmpl_data.get("system_instruction", ""),
-                    category=tmpl_data.get("category", "general"),
-                    created_at=tmpl_data.get("created_at", ""),
-                    updated_at=tmpl_data.get("updated_at", ""),
-                )
+        repo.save_template(
+            PromptTemplate(
+                id=tmpl_data.get("id") or None,
+                name=tmpl_data.get("name", "Untitled Template"),
+                description=tmpl_data.get("description", ""),
+                content=tmpl_data.get("content", ""),
+                system_instruction=tmpl_data.get("system_instruction", ""),
+                category=tmpl_data.get("category", "general"),
+                created_at=tmpl_data.get("created_at", ""),
+                updated_at=tmpl_data.get("updated_at", ""),
             )
-        except Exception:
-            continue
+        )
 
     imported_count = 0
     for p_data in data.get("prompts", []):
@@ -149,7 +152,7 @@ def import_library_from_json(repo: PromptRepository, filepath: Path) -> int:
             system_instruction=p_data.get("system_instruction", ""),
             target_model=p_data.get("target_model", "General"),
             temperature=_safe_float(p_data.get("temperature"), default=0.7),
-            is_favorite=bool(p_data.get("is_favorite", False)),
+            is_favorite=p_data.get("is_favorite", False),
             use_count=_safe_int(p_data.get("use_count"), default=0),
             tags=p_data.get("tags", []),
             created_at=p_data.get("created_at", ""),

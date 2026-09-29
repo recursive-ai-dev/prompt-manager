@@ -1,5 +1,6 @@
 """Database connection, schema management, and migrations for Prompt Manager."""
 
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 import uuid
@@ -212,7 +213,7 @@ class Database:
 
     def _init_db(self) -> None:
         """Initialize database schema and seed default prompts if empty."""
-        with self.get_connection() as conn:
+        with closing(self.get_connection()) as conn, conn:
             conn.executescript(BASE_SCHEMA_SQL)
             if self.fts_enabled:
                 conn.executescript(FTS_SCHEMA_SQL)

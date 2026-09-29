@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 
 from prompt_manager.core.arena import ArenaResult, run_arena_comparison
 from prompt_manager.core.licensing import FEATURE_ARENA, get_license_manager
+from prompt_manager.ui.worker_thread import WorkerThread
 from prompt_manager.integrations.llm_providers import (
     MODEL_CATALOG,
     LLMClient,
@@ -54,6 +55,9 @@ class _ArenaWorker(QObject):
         self.model_ids = model_ids
         self.temperature = temperature
         self._is_cancelled = False
+
+    def cancel(self):
+        self._is_cancelled = True
 
     def run(self):
         try:
@@ -143,6 +147,7 @@ class ModelCard(QFrame):
         return self.model_combo.currentData()
 
     def set_running(self):
+        self.model_combo.setEnabled(False)
         self.status_badge.setText("⏳ Generating...")
         self.status_badge.setStyleSheet("font-size: 10px; font-weight: 600; color: #38bdf8;")
         self.metrics_label.setText("Querying model API...")
@@ -150,6 +155,7 @@ class ModelCard(QFrame):
         self.output_edit.clear()
 
     def set_result(self, response: LLMResponse, is_fastest: bool = False, is_cheapest: bool = False):
+        self.model_combo.setEnabled(True)
         self.progress.hide()
         if response.is_success:
             self.output_edit.setPlainText(response.content)
@@ -276,6 +282,8 @@ class ArenaDialog(QDialog):
         if not prompt_text:
             return
 
+        self.cancel_arena()
+
         model_ids = [
             self.card1.get_selected_model_id(),
             self.card2.get_selected_model_id(),
@@ -291,32 +299,38 @@ class ArenaDialog(QDialog):
         self.card2.set_running()
         self.card3.set_running()
 
-        self._worker_thread = QThread(self)
         self._worker = _ArenaWorker(
             prompt=prompt_text,
             system_instruction=self._system_instruction,
             model_ids=model_ids,
             temperature=temperature,
         )
-        self._worker.moveToThread(self._worker_thread)
-        self._worker_thread.started.connect(self._worker.run)
+        self._worker_thread = WorkerThread(
+            self._worker, self._worker.run, self._worker.cancel
+        )
         self._worker.finished.connect(self._on_arena_finished)
         self._worker.error.connect(self._on_arena_error)
         self._worker_thread.start()
 
     def cancel_arena(self):
         if self._worker:
-            self._worker._is_cancelled = True
-        if self._worker_thread:
-            self._worker_thread.quit()
-            self._worker_thread.wait(300)
+            self._worker.cancel()
         self._worker = None
         self._worker_thread = None
+        for card in (self.card1, self.card2, self.card3):
+            card.model_combo.setEnabled(True)
+            card.progress.hide()
         self.stop_btn.hide()
         self.run_btn.show()
         self.summary_label.setText("Benchmark cancelled.")
 
+    def done(self, result):
+        self.cancel_arena()
+        super().done(result)
+
     def _on_arena_finished(self, result: ArenaResult):
+        if self.sender() is not self._worker or self._worker is None:
+            return
         self.stop_btn.hide()
         self.run_btn.show()
 
@@ -328,8 +342,8 @@ class ArenaDialog(QDialog):
         for i, card in enumerate(cards):
             if i < len(result.responses):
                 resp = result.responses[i]
-                is_fastest = fastest is not None and resp.model_id == fastest.model_id
-                is_cheapest = cheapest is not None and resp.model_id == cheapest.model_id
+                is_fastest = resp is fastest
+                is_cheapest = resp is cheapest
                 card.set_result(resp, is_fastest=is_fastest, is_cheapest=is_cheapest)
 
         summary_parts = []
@@ -346,14 +360,15 @@ class ArenaDialog(QDialog):
         self._cleanup_thread()
 
     def _on_arena_error(self, err: str):
+        if self.sender() is not self._worker or self._worker is None:
+            return
         self.stop_btn.hide()
         self.run_btn.show()
         self.summary_label.setText(f"⚠ Benchmark error: {err}")
+        for card in (self.card1, self.card2, self.card3):
+            card.set_result(LLMResponse(model_id=card.get_selected_model_id(), error=err))
         self._cleanup_thread()
 
     def _cleanup_thread(self):
-        if self._worker_thread:
-            self._worker_thread.quit()
-            self._worker_thread.wait(200)
         self._worker = None
         self._worker_thread = None

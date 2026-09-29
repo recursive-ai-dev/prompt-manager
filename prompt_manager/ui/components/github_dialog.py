@@ -43,6 +43,8 @@ from prompt_manager.integrations.github_client import (
 )
 from prompt_manager.integrations.github_client import ACCESS_TOKEN_URL
 from prompt_manager.core.github_sync import validate_github_config
+from prompt_manager.ui.worker_thread import WorkerThread
+from threading import Event
 
 
 class _DevicePollWorker(QObject):
@@ -59,22 +61,30 @@ class _DevicePollWorker(QObject):
         self.interval = max(interval, 5)
         self.expires_in = expires_in
         self._stop = False
+        self._stop_event = Event()
 
     def stop(self):
         self._stop = True
+        self._stop_event.set()
 
     def run_poll(self):
+        try:
+            self._poll()
+        except Exception as exc:
+            if not self._stop:
+                self.error_occurred.emit(str(exc))
+
+    def _poll(self):
         import time
         import urllib.parse
         import urllib.request
         import json
 
-        deadline = time.time() + self.expires_in
+        deadline = time.monotonic() + self.expires_in
         current_interval = self.interval
         self.status_update.emit(f"Polling every {current_interval}s… (expires in {self.expires_in}s)")
-        while time.time() < deadline and not self._stop:
-            time.sleep(current_interval)
-            if self._stop:
+        while time.monotonic() < deadline and not self._stop:
+            if self._stop_event.wait(current_interval):
                 break
             data = urllib.parse.urlencode(
                 {
@@ -93,6 +103,8 @@ class _DevicePollWorker(QObject):
                 self.status_update.emit(f"Poll error: {e} — retrying")
                 continue
 
+            if self._stop:
+                return
             if "access_token" in payload and payload["access_token"]:
                 self.token_received.emit(payload["access_token"])
                 return
@@ -618,21 +630,22 @@ class GithubDialog(QDialog):
     def _start_poll_thread(self, client_id: str, device_code: str, interval: int, expires_in: int):
         # Clean previous
         self._cancel_device_flow(silent=True)
-        self._poll_thread = QThread(self)
         self._poll_worker = _DevicePollWorker(client_id, device_code, interval, expires_in)
-        self._poll_worker.moveToThread(self._poll_thread)
-        self._poll_thread.started.connect(self._poll_worker.run_poll)
+        self._poll_thread = WorkerThread(
+            self._poll_worker, self._poll_worker.run_poll, self._poll_worker.stop
+        )
         self._poll_worker.token_received.connect(self._on_oauth_token)
         self._poll_worker.error_occurred.connect(self._on_oauth_error)
-        self._poll_worker.status_update.connect(lambda msg: self.oauth_poll_status.setText(msg))
+        self._poll_worker.status_update.connect(self._on_oauth_status)
         self._poll_thread.start()
+
+    def _on_oauth_status(self, message: str):
+        if self.sender() is self._poll_worker and self._poll_worker is not None:
+            self.oauth_poll_status.setText(message)
 
     def _cancel_device_flow(self, silent: bool = False):
         if self._poll_worker:
             self._poll_worker.stop()
-        if self._poll_thread:
-            self._poll_thread.quit()
-            self._poll_thread.wait(1000)
         self._poll_worker = None
         self._poll_thread = None
         if not silent:
@@ -643,6 +656,8 @@ class GithubDialog(QDialog):
             self.oauth_cancel_btn.setEnabled(False)
 
     def _on_oauth_token(self, token: str):
+        if self.sender() is not self._poll_worker or self._poll_worker is None:
+            return
         self.oauth_progress.setVisible(False)
         self.oauth_cancel_btn.setEnabled(False)
         self.oauth_start_btn.setEnabled(True)
@@ -676,6 +691,8 @@ class GithubDialog(QDialog):
             self.oauth_progress.setVisible(False)
 
     def _on_oauth_error(self, msg: str):
+        if self.sender() is not self._poll_worker or self._poll_worker is None:
+            return
         self.oauth_progress.setVisible(False)
         self.oauth_cancel_btn.setEnabled(False)
         self.oauth_start_btn.setEnabled(True)
@@ -1038,7 +1055,7 @@ class GithubDialog(QDialog):
 
     def _on_close_attempt(self):
         # Ensure polling stopped
-        if self._poll_thread and self._poll_thread.isRunning():
+        if self._poll_worker:
             self._cancel_device_flow()
         # Persist branch/path
         try:
@@ -1050,3 +1067,7 @@ class GithubDialog(QDialog):
     def closeEvent(self, event):
         self._cancel_device_flow(silent=True)
         super().closeEvent(event)
+
+    def done(self, result):
+        self._cancel_device_flow(silent=True)
+        super().done(result)

@@ -79,12 +79,12 @@ class VariableFormWidget(QFrame):
 
     def set_variables(self, specs: List[VariableSpec]):
         """Update form fields based on variable specifications, preserving existing typed values."""
-        current_names = [s.name for s in self._current_specs]
-        new_names = [s.name for s in specs]
+        unchanged = self._current_specs == specs
 
         self._current_specs = specs
 
         if not specs:
+            self._clear_fields()
             self.no_vars_label.show()
             self.scroll_area.hide()
             self.clear_btn.hide()
@@ -98,18 +98,10 @@ class VariableFormWidget(QFrame):
         self.clear_btn.show()
         self.reset_btn.show()
 
-        if current_names == new_names:
+        if unchanged:
             return
 
-        # Clear existing fields
-        for widget in self._widgets.values():
-            widget.deleteLater()
-        self._widgets.clear()
-
-        while self.form_layout.count():
-            item = self.form_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        self._clear_fields()
 
         for spec in specs:
             field_wrapper = QWidget()
@@ -166,6 +158,13 @@ class VariableFormWidget(QFrame):
 
         self.form_layout.addStretch()
         self._emit_current_values()
+
+    def _clear_fields(self):
+        self._widgets.clear()
+        while self.form_layout.count():
+            item = self.form_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
 
     def get_values(self) -> Dict[str, str]:
         values = {}

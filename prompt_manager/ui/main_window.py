@@ -577,6 +577,14 @@ class MainWindow(QMainWindow):
         self._refresh_prompts_list()
 
     def _on_prompt_selected(self, prompt_id: str):
+        if not self._flush_pending_save():
+            # Keep the list selection aligned with the editor after a failure.
+            self.prompt_list.blockSignals(True)
+            try:
+                self._refresh_prompts_list(select_id=self._active_prompt.id)
+            finally:
+                self.prompt_list.blockSignals(False)
+            return
         prompt = self.repo.get_prompt_by_id(prompt_id)
         if prompt:
             self._active_prompt = prompt
@@ -584,6 +592,8 @@ class MainWindow(QMainWindow):
             self._update_preview()
 
     def _on_new_prompt(self):
+        if not self._flush_pending_save():
+            return
         new_p = Prompt(
             id=str(uuid.uuid4()),
             title="New Prompt",
@@ -601,15 +611,33 @@ class MainWindow(QMainWindow):
 
     def _on_save_prompt(self, create_revision: bool = False):
         if not self._active_prompt:
-            return
+            return True
         self.editor.update_prompt_model(self._active_prompt)
-        self.repo.save_prompt(self._active_prompt, create_revision=create_revision)
+        try:
+            self.repo.save_prompt(self._active_prompt, create_revision=create_revision)
+        except Exception as exc:
+            self.editor.autosave_timer.stop()
+            QMessageBox.critical(self, "Save failed", str(exc))
+            return False
         self.editor.mark_saved()
         if create_revision:
             self._refresh_prompts_list(select_id=self._active_prompt.id)
             self.toast.show_message("Saved snapshot revision!")
         else:
             self.prompt_list.update_prompt_item(self._active_prompt)
+        return True
+
+    def _flush_pending_save(self) -> bool:
+        if self.editor._is_dirty and self._active_prompt:
+            return self._on_save_prompt()
+        return True
+
+    def closeEvent(self, event):
+        if not self._flush_pending_save():
+            event.ignore()
+            return
+        self.preview_panel.cancel_pollinations(silent=True)
+        super().closeEvent(event)
 
     def _on_delete_prompt(self, prompt_id: Optional[str]):
         target_id = prompt_id or (self._active_prompt.id if self._active_prompt else None)
@@ -623,12 +651,18 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
+            if self._active_prompt and target_id != self._active_prompt.id:
+                if not self._flush_pending_save():
+                    return
+            self.editor.autosave_timer.stop()
             self.repo.delete_prompt(target_id)
             self._active_prompt = None
             self._refresh_prompts_list()
             self.toast.show_message("Prompt deleted")
 
     def _on_duplicate_prompt(self, prompt_id: Optional[str]):
+        if not self._flush_pending_save():
+            return
         target_id = prompt_id or (self._active_prompt.id if self._active_prompt else None)
         if not target_id:
             return
@@ -652,6 +686,8 @@ class MainWindow(QMainWindow):
         self.toast.show_message("Prompt duplicated")
 
     def _on_toggle_favorite(self, prompt_id: str):
+        if not self._flush_pending_save():
+            return
         is_fav = self.repo.toggle_favorite(prompt_id)
         self._refresh_prompts_list(select_id=prompt_id)
         msg = "Added to favorites ⭐" if is_fav else "Removed from favorites"
@@ -1146,6 +1182,8 @@ class MainWindow(QMainWindow):
 
     def _instantiate_prompt_from_template(self, template_id: str) -> None:
         """Create a new Prompt from a Template and open it in the editor."""
+        if not self._flush_pending_save():
+            return
         try:
             prompt = self.repo.create_prompt_from_template(template_id)
             self._active_prompt = prompt

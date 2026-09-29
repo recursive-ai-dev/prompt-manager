@@ -208,14 +208,14 @@ def _safe_float(val: Any, default: float = 0.7) -> float:
     """Safely parse a float value with fallback to default."""
     if val is None:
         return default
-    if isinstance(val, (int, float)):
-        return float(val)
     val_str = str(val).strip()
     if not val_str:
         return default
     try:
+        if isinstance(val, (int, float)):
+            return float(val)
         return float(val_str)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         return default
 
 
@@ -230,7 +230,7 @@ def _safe_int(val: Any, default: int = 0) -> int:
         return default
     try:
         return int(float(val_str))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         return default
 
 

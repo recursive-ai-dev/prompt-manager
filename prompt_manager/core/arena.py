@@ -64,21 +64,20 @@ def run_arena_comparison(
 
     # Concurrently execute models across provider boundaries
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(model_ids)) as executor:
-        future_map = {executor.submit(_execute_single, mid): mid for mid in model_ids}
+        future_map = {
+            executor.submit(_execute_single, mid): i for i, mid in enumerate(model_ids)
+        }
+        responses = {}
         for future in concurrent.futures.as_completed(future_map):
+            index = future_map[future]
             try:
-                resp = future.result()
-                result.responses.append(resp)
+                responses[index] = future.result()
             except Exception as e:
-                mid = future_map[future]
-                result.responses.append(
-                    LLMResponse(
-                        model_id=mid,
-                        error=f"Execution exception: {e}",
-                    )
+                responses[index] = LLMResponse(
+                    model_id=model_ids[index],
+                    error=f"Execution exception: {e}",
                 )
 
     # Sort responses to preserve original model selection order
-    order_map = {mid: i for i, mid in enumerate(model_ids)}
-    result.responses.sort(key=lambda r: order_map.get(r.model_id, 99))
+    result.responses = [responses[i] for i in range(len(model_ids))]
     return result

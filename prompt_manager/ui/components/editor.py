@@ -196,14 +196,18 @@ class PromptEditorPanel(QFrame):
         self.autosave_timer.timeout.connect(lambda: self.save_requested.emit(False))
 
     def set_folders(self, folders: List[Folder]):
+        selected_folder = self.folder_combo.currentData()
         self._suppress_signals = True
         self.folder_combo.clear()
         self.folder_combo.addItem("None (Root)", None)
         for f in folders:
             self.folder_combo.addItem(f"📁 {f.name}", f.id)
+        index = self.folder_combo.findData(selected_folder)
+        self.folder_combo.setCurrentIndex(index if index != -1 else 0)
         self._suppress_signals = False
 
     def load_prompt(self, prompt: Prompt):
+        self.autosave_timer.stop()
         self._suppress_signals = True
         self._current_prompt = prompt
         self._is_dirty = False
@@ -259,6 +263,7 @@ class PromptEditorPanel(QFrame):
         return self.system_edit.toPlainText()
 
     def mark_saved(self):
+        self.autosave_timer.stop()
         self._is_dirty = False
         self.save_status.setText("Saved")
         self.save_status.setStyleSheet("color: #10b981; font-size: 11px;")
