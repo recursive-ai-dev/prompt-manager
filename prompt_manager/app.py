@@ -6,10 +6,13 @@ import os
 from pathlib import Path
 import signal
 import sys
-from PyQt6.QtWidgets import QApplication
 
 from prompt_manager.config import APP_DISPLAY_NAME, APP_NAME, APP_VERSION, ensure_directories
-from prompt_manager.ui.main_window import MainWindow
+
+# NOTE: PyQt6 and the UI package are intentionally imported lazily inside the
+# GUI-launch path (not at module top level) so that headless CLI commands
+# (--run-ai, --github-push/pull/status, --license-status, --list-*, --version)
+# work on servers and CI runners that have no GUI/OpenGL libraries installed.
 
 
 def main():
@@ -243,6 +246,9 @@ def main():
         except Exception as e:
             print(f"GitHub sync failed: {e}", file=sys.stderr)
             sys.exit(1)
+        # Headless GitHub sync is complete — never fall through into the GUI.
+        sys.exit(0)
+
     if args.list_ai_models:
         from prompt_manager.integrations.pollinations_client import PollinationsClient as _PolClient
 
@@ -289,6 +295,20 @@ def main():
             _set_theme_id(args.theme)
         except Exception:
             pass
+
+    # Import GUI toolkit lazily — only when actually launching the desktop app.
+    try:
+        from PyQt6.QtWidgets import QApplication
+        from prompt_manager.ui.main_window import MainWindow
+    except ImportError as exc:
+        print(
+            "Failed to load the graphical interface. The desktop UI requires PyQt6 "
+            f"and its system libraries (e.g. OpenGL, xkbcommon).\n  Details: {exc}\n"
+            "On headless servers, use the CLI commands instead "
+            "(--run-ai, --github-push/pull/status, --license-status).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     app = QApplication(sys.argv[:1])
     app.setStyle("Fusion")

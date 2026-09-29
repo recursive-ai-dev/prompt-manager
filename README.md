@@ -199,7 +199,7 @@ prompt-manager/
 │   └── prompt-manager.desktop
 ├── .github/workflows/
 │   └── build_releases.yml         # CI/CD multi-OS release builder
-├── tests/                         # Full test suite (77 tests)
+├── tests/                         # Full test suite (107 tests)
 ├── pyproject.toml
 └── README.md
 ```

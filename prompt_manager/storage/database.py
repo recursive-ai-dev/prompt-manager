@@ -6,7 +6,24 @@ import uuid
 from typing import Optional
 from prompt_manager.config import DATABASE_PATH, ensure_directories
 
-SCHEMA_SQL = """
+
+def fts5_available() -> bool:
+    """Return True if the active SQLite build supports the FTS5 module.
+
+    Detected once by attempting to create a throwaway FTS5 table in an
+    in-memory database. Falls back to LIKE-based search when unavailable.
+    """
+    try:
+        probe = sqlite3.connect(":memory:")
+        try:
+            probe.execute("CREATE VIRTUAL TABLE _fts5_probe USING fts5(x)")
+            return True
+        finally:
+            probe.close()
+    except sqlite3.Error:
+        return False
+
+BASE_SCHEMA_SQL = """
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 PRAGMA synchronous = NORMAL;
@@ -73,7 +90,13 @@ CREATE TABLE IF NOT EXISTS prompt_revisions (
     system_instruction TEXT DEFAULT '',
     created_at TEXT NOT NULL
 );
+"""
 
+# Full-text search schema (FTS5). Applied only when the running SQLite build
+# was compiled with the FTS5 module. When FTS5 is unavailable the application
+# transparently falls back to LIKE-based search (see PromptRepository), so the
+# app remains fully functional on minimal SQLite builds.
+FTS_SCHEMA_SQL = """
 -- Full-text search virtual table using FTS5
 CREATE VIRTUAL TABLE IF NOT EXISTS prompts_fts USING fts5(
     id UNINDEXED,
@@ -174,6 +197,10 @@ class Database:
             self.db_path = Path(db_path)
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # Whether full-text search (FTS5) is available in this SQLite build.
+        # When False, search transparently degrades to LIKE queries.
+        self.fts_enabled: bool = fts5_available()
+
         self._init_db()
 
     def get_connection(self) -> sqlite3.Connection:
@@ -186,7 +213,9 @@ class Database:
     def _init_db(self) -> None:
         """Initialize database schema and seed default prompts if empty."""
         with self.get_connection() as conn:
-            conn.executescript(SCHEMA_SQL)
+            conn.executescript(BASE_SCHEMA_SQL)
+            if self.fts_enabled:
+                conn.executescript(FTS_SCHEMA_SQL)
             self._migrate_add_template_infrastructure(conn)
 
             # Check if any prompt exists
@@ -219,9 +248,9 @@ class Database:
         cols = {row[1] for row in cur.fetchall()}  # second field is name
         if "template_id" not in cols:
             conn.execute("ALTER TABLE prompts ADD COLUMN template_id TEXT REFERENCES prompt_templates(id) ON DELETE SET NULL")
-        # Ensure templates_fts exists
+        # Ensure templates_fts exists (only when FTS5 is supported)
         cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='templates_fts'")
-        if cur.fetchone() is None:
+        if self.fts_enabled and cur.fetchone() is None:
             conn.execute(
                 """
                 CREATE VIRTUAL TABLE templates_fts USING fts5(
