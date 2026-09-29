@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "prompt-manager"
-version = "0.2.0"
+dynamic = ["version"]
 description = "A powerful desktop prompt storage, organizer, and templating editor — 13 themes, reusable prompt templates, GitHub OAuth/PAT sync."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -31,6 +31,7 @@ classifiers = [
 ]
 dependencies = [
     "PyQt6>=6.4.0",
+    "keyring>=25.6.0",
 ]
 
 [project.scripts]
@@ -44,3 +45,22 @@ include = ["prompt_manager*"]
 pythonpath = ["."]
 testpaths = ["tests"]
 
+[tool.setuptools.dynamic]
+version = {attr = "prompt_manager.__version__"}
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.11", "mypy>=1.15"]
+
+[tool.ruff]
+target-version = "py310"
+
+[tool.ruff.lint]
+# Start with correctness checks across the existing codebase.
+select = ["E9", "F63", "F7", "F82"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["prompt_manager/config.py", "prompt_manager/core/keychain.py"]
+follow_imports = "skip"
+check_untyped_defs = true
+warn_unused_ignores = true

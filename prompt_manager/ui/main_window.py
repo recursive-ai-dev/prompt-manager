@@ -27,6 +27,7 @@ from prompt_manager.config import (
     get_theme_id,
     set_theme_id,
     get_github_config,
+    set_github_config,
     is_github_connected,
 )
 from prompt_manager.core.exporter import (
@@ -201,7 +202,7 @@ class MainWindow(QMainWindow):
 
         save_act = QAction("&Save Revision", self)
         save_act.setShortcut(QKeySequence.StandardKey.Save)
-        save_act.setStatusTip("Save prompt modifications and record an immutable revision snapshot (Ctrl+S)")
+        save_act.setStatusTip("Save prompt modifications and record a revision snapshot (Ctrl+S)")
         save_act.triggered.connect(lambda: self._on_save_prompt(create_revision=True))
         file_menu.addAction(save_act)
 

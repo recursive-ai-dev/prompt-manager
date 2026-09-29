@@ -43,6 +43,7 @@ def build_executable():
         "--name=prompt-manager",
         "--noconfirm",
         "--clean",
+        "--collect-all=keyring",
         "--windowed",  # No terminal window on launch
         f"--add-data={ASSETS_DIR}{os.pathsep}prompt_manager/ui/assets",
         f"--paths={PROJECT_ROOT}",

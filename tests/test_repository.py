@@ -66,8 +66,48 @@ class TestRepository(unittest.TestCase):
 
         revisions = self.repo.get_revisions(prompt.id)
         self.assertEqual(len(revisions), 1)
-        self.assertEqual(revisions[0].template_content, "Updated Version 2")
+        self.assertEqual(revisions[0].template_content, "Initial Version")
+        self.assertEqual(self.repo.get_prompt_by_id(prompt.id).template_content, "Updated Version 2")
+
+        prompt.template_content = revisions[0].template_content
+        self.repo.save_prompt(prompt, create_revision=True)
+        self.assertEqual(self.repo.get_prompt_by_id(prompt.id).template_content, "Initial Version")
+        self.assertEqual(
+            [rev.template_content for rev in self.repo.get_revisions(prompt.id)],
+            ["Updated Version 2", "Initial Version"],
+        )
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_revision_keeps_all_restorable_fields_and_failed_save_rolls_back(tmp_path):
+    from unittest.mock import patch
+    import pytest
+
+    repo = PromptRepository(Database(tmp_path / "revisions.db"))
+    prompt = Prompt(title="Original title", template_content="Original body", system_instruction="Original system")
+    repo.save_prompt(prompt, create_revision=True)
+    assert repo.get_revisions(prompt.id) == []
+    prompt.title = "New title"
+    prompt.template_content = "New body"
+    prompt.system_instruction = "New system"
+    record = repo._record_revision
+
+    def fail_after_snapshot(conn, previous):
+        record(conn, previous)
+        raise RuntimeError("simulated interrupted save")
+
+    with patch.object(repo, "_record_revision", side_effect=fail_after_snapshot):
+        with pytest.raises(RuntimeError):
+            repo.save_prompt(prompt, create_revision=True)
+    assert repo.get_revisions(prompt.id) == []
+    assert repo.get_prompt_by_id(prompt.id).template_content == "Original body"
+
+    repo.save_prompt(prompt, create_revision=True)
+    revision = repo.get_revisions(prompt.id)[0]
+    assert (revision.title, revision.template_content, revision.system_instruction) == (
+        "Original title", "Original body", "Original system",
+    )
+    assert revision.revision_number == 1

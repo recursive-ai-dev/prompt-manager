@@ -58,7 +58,7 @@ class PromptEditorPanel(QFrame):
 
         self.save_btn = QPushButton("Save (Ctrl+S)")
         self.save_btn.setObjectName("primaryButton")
-        self.save_btn.setToolTip("Save modifications and create an immutable revision checkpoint (Ctrl+S)")
+        self.save_btn.setToolTip("Save modifications and create a revision checkpoint (Ctrl+S)")
         self.save_btn.clicked.connect(lambda: self.save_requested.emit(True))
         top_bar.addWidget(self.save_btn)
 
