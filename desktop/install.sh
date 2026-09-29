@@ -89,7 +89,12 @@ chmod +x "${LAUNCHER}"
 
 # If pip entry point exists, keep it as prompt-manager.orig for the wrapper to delegate
 if "${PYTHON_BIN}" -m pip show prompt-manager >/dev/null 2>&1; then
-    PIP_BIN="$(python3 -c 'import sysconfig, pathlib; print(pathlib.Path(sysconfig.get_path(\"scripts\")) / \"prompt-manager\")')"
+    PIP_BIN="$("${PYTHON_BIN}" -c 'import sysconfig, os; print(os.path.join(sysconfig.get_path("scripts"), "prompt-manager"))')"
+    # Also consider the per-user scripts dir (pip install --user) as a fallback
+    if [[ ! -f "${PIP_BIN}" ]]; then
+        USER_PIP_BIN="$("${PYTHON_BIN}" -c 'import sysconfig, os; print(os.path.join(sysconfig.get_path("scripts", "posix_user"), "prompt-manager"))' 2>/dev/null || true)"
+        [[ -n "${USER_PIP_BIN}" && -f "${USER_PIP_BIN}" ]] && PIP_BIN="${USER_PIP_BIN}"
+    fi
     # Common user base bin is ~/.local/bin — wrapper already occupies that name, so stash original
     if [[ -f "${PIP_BIN}" && "${PIP_BIN}" != "${LAUNCHER}" ]]; then
         cp -f "${PIP_BIN}" "${BIN_DIR}/prompt-manager.orig" 2>/dev/null || true

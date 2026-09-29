@@ -102,7 +102,7 @@ class DeviceCodeResponse:
 class GithubClient:
     """Authenticated GitHub API client using a personal access token or OAuth token."""
 
-    def __init__(self, token: str, user_agent: str = "prompt-manager/0.1"):
+    def __init__(self, token: str, user_agent: str = "prompt-manager/0.2.0"):
         if not token or not token.strip():
             raise ValueError("GitHub token must not be empty")
         self.token = token.strip()

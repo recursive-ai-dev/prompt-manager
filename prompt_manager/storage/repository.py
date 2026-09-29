@@ -81,13 +81,14 @@ class PromptRepository:
 
             if search_query and search_query.strip():
                 clean_query = self._sanitize_fts_query(search_query)
-                if clean_query:
+                if clean_query and self.db.fts_enabled:
                     conditions.append(
                         "p.id IN (SELECT id FROM prompts_fts WHERE prompts_fts MATCH ?)"
                     )
                     params.append(clean_query)
                 else:
-                    # Fallback to LIKE if query was purely punctuation
+                    # Fallback to LIKE if query was purely punctuation, or when
+                    # the SQLite build lacks the FTS5 module.
                     conditions.append(
                         "(p.title LIKE ? OR p.template_content LIKE ? OR p.description LIKE ?)"
                     )
@@ -397,7 +398,7 @@ class PromptRepository:
 
             if search_query and search_query.strip():
                 clean = self._sanitize_fts_query(search_query)
-                if clean:
+                if clean and self.db.fts_enabled:
                     conditions.append("t.id IN (SELECT id FROM templates_fts WHERE templates_fts MATCH ?)")
                     params.append(clean)
                 else:
